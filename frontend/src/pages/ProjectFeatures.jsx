@@ -24,6 +24,7 @@ import {
   useOpenIssue,
 } from '../ui'
 import IssueForm from '../components/IssueForm'
+import { FeatureTimeLog } from '../components/IssueExtras'
 import { ApprovalBadge, RequestApprovalModal, StageSignoff, WatchButton } from '../components/ProjectRules'
 
 /* ───────────── Feature modal (create + edit) ───────────── */
@@ -230,6 +231,9 @@ export function FeatureModal({ project, featureId, releases, onClose }) {
                   </div>
                 )}
               </div>
+            )}
+            {!isNew && user.org?.features?.includes('time_tracking') && user.org?.modules?.time !== false && (
+              <FeatureTimeLog feature={feature} canManage={project.can_manage} />
             )}
           </div>
           <div className="modal-footer">

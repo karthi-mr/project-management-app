@@ -660,12 +660,28 @@ def entry_rate(entry: TimeEntry) -> float | None:
     return entry.user.hourly_rate if entry.user else None
 
 
+def time_entries_query(project_ids: list[int]):
+    """Time logged in these projects: on their issues, or straight on their features."""
+    return (
+        select(TimeEntry)
+        .outerjoin(Issue, TimeEntry.issue_id == Issue.id)
+        .outerjoin(Feature, TimeEntry.feature_id == Feature.id)
+        .where(or_(Issue.project_id.in_(project_ids or [0]), Feature.project_id.in_(project_ids or [0])))
+    )
+
+
+def entry_feature(entry: TimeEntry):
+    """The feature a time entry counts towards: its own, or its issue's."""
+    if entry.feature is not None:
+        return entry.feature
+    return entry.issue.feature if entry.issue is not None else None
+
+
 def project_cost(db: Session, project: Project) -> dict:
-    entries = db.scalars(
-        select(TimeEntry).join(Issue).where(Issue.project_id == project.id)
-    ).all()
+    entries = db.scalars(time_entries_query([project.id])).all()
     hours = cost = unpriced = 0.0
     people: dict[int | None, dict] = {}
+    features: dict[int | None, dict] = {}
     months: dict[str, dict] = defaultdict(lambda: {"hours": 0.0, "cost": 0.0})
     for e in entries:
         rate = entry_rate(e)
@@ -674,6 +690,14 @@ def project_cost(db: Session, project: Project) -> dict:
         row["hours"] += e.hours
         month = months[e.day.strftime("%Y-%m")]
         month["hours"] += e.hours
+        feature = entry_feature(e)
+        frow = features.setdefault(feature.id if feature else None, {
+            "feature": {"id": feature.id, "title": feature.title, "stage": feature.stage} if feature else None,
+            "hours": 0.0, "direct_hours": 0.0, "cost": 0.0,
+        })
+        frow["hours"] += e.hours
+        if e.feature_id:
+            frow["direct_hours"] += e.hours
         if rate is None:
             unpriced += e.hours
             row["unpriced_hours"] += e.hours
@@ -681,6 +705,7 @@ def project_cost(db: Session, project: Project) -> dict:
             cost += e.hours * rate
             row["cost"] += e.hours * rate
             month["cost"] += e.hours * rate
+            frow["cost"] += e.hours * rate
     budget = project.budget
     return {
         "budget": budget,
@@ -695,6 +720,12 @@ def project_cost(db: Session, project: Project) -> dict:
             key=lambda r: -r["cost"],
         ),
         "months": [{"month": k, "hours": round(v["hours"], 2), "cost": round(v["cost"], 2)} for k, v in sorted(months.items())],
+        # Where the money went, feature by feature (time on a feature's issues counts towards it);
+        # "feature": null is work not linked to any feature.
+        "features": sorted(
+            ({**r, "hours": round(r["hours"], 2), "direct_hours": round(r["direct_hours"], 2), "cost": round(r["cost"], 2)} for r in features.values()),
+            key=lambda r: (r["feature"] is None, -r["cost"], -r["hours"]),
+        ),
     }
 
 
@@ -781,9 +812,7 @@ def workload(
                 row["planned"][index(d)] += share
 
     entries = db.scalars(
-        select(TimeEntry).join(Issue).where(
-            Issue.project_id.in_(project_ids or [0]), TimeEntry.day >= first, TimeEntry.day <= last, TimeEntry.user_id.in_(list(rows) or [0])
-        )
+        time_entries_query(project_ids).where(TimeEntry.day >= first, TimeEntry.day <= last, TimeEntry.user_id.in_(list(rows) or [0]))
     ).all()
     for e in entries:
         rows[e.user_id]["logged"][index(e.day)] += e.hours

@@ -547,7 +547,9 @@ class TimeEntry(Base):
     __tablename__ = "time_entries"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    issue_id: Mapped[int] = mapped_column(ForeignKey("issues.id", ondelete="CASCADE"), index=True)
+    # Time is logged on an issue, or straight on a feature (design, analysis, reviews …): one of the two.
+    issue_id: Mapped[int | None] = mapped_column(ForeignKey("issues.id", ondelete="CASCADE"), nullable=True, index=True)
+    feature_id: Mapped[int | None] = mapped_column(ForeignKey("features.id", ondelete="CASCADE"), nullable=True, index=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     day: Mapped[date] = mapped_column(Date, index=True)
     hours: Mapped[float] = mapped_column(Float)
@@ -555,7 +557,8 @@ class TimeEntry(Base):
     rate: Mapped[float | None] = mapped_column(Float, nullable=True)  # the person's hourly rate when logged
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
-    issue: Mapped[Issue] = relationship(back_populates="time_entries")
+    issue: Mapped[Issue | None] = relationship(back_populates="time_entries")
+    feature: Mapped["Feature | None"] = relationship()
     user: Mapped[User | None] = relationship()
 
 

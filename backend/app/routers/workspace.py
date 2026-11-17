@@ -10,8 +10,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Issue, Project, ProjectField, StoredFile, TimeEntry, User, utcnow
-from ..saas import require_feature
+from ..models import Feature, Issue, Project, ProjectField, StoredFile, TimeEntry, User, utcnow
+from ..saas import has_feature, require_feature
 from ..security import get_current_user
 from ..serializers import user_brief
 from ..workflow import COLOR, MAX_STATUSES, project_statuses, slugify
@@ -309,6 +309,7 @@ def time_out(t: TimeEntry) -> dict:
     return {
         "id": t.id,
         "issue_id": t.issue_id,
+        "feature_id": t.feature_id,
         "user": user_brief(t.user),
         "day": t.day.isoformat(),
         "hours": t.hours,
@@ -353,11 +354,77 @@ def log_time(
     return time_out(entry)
 
 
+def _get_feature(db: Session, feature_id: int, user: User) -> Feature:
+    feature = db.get(Feature, feature_id)
+    if not feature:
+        raise HTTPException(404, "Feature not found")
+    get_project(db, feature.project_id, user, section="features")
+    return feature
+
+
+def feature_time(db: Session, feature: Feature, user: User) -> dict:
+    """Time on a feature: logged on it directly, plus everything logged on its issues. The cost is
+    shown only to people who may see budgets, because it reveals hourly rates."""
+    from .delivery import entry_rate
+
+    direct = sorted(db.scalars(select(TimeEntry).where(TimeEntry.feature_id == feature.id)).all(), key=lambda t: (t.day, t.id), reverse=True)
+    on_issues = db.scalars(
+        select(TimeEntry).join(Issue, TimeEntry.issue_id == Issue.id).where(Issue.feature_id == feature.id)
+    ).all()
+    project = feature.project
+    see_cost = (user.role == "admin" or project.owner_id == user.id) and has_feature(db, project.org_id, "budgets")
+    result = {
+        "entries": [time_out(t) for t in direct],
+        "direct_hours": round(sum(t.hours for t in direct), 2),
+        "issue_hours": round(sum(t.hours for t in on_issues), 2),
+    }
+    result["total_hours"] = round(result["direct_hours"] + result["issue_hours"], 2)
+    if see_cost:
+        priced = [(t.hours, entry_rate(t)) for t in [*direct, *on_issues]]
+        result["cost"] = round(sum(h * r for h, r in priced if r is not None), 2)
+        result["unpriced_hours"] = round(sum(h for h, r in priced if r is None), 2)
+        result["currency"] = project.currency or "USD"
+    return result
+
+
+@router.get("/features/{feature_id}/time")
+def list_feature_time(feature_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    feature = _get_feature(db, feature_id, user)
+    require_feature(db, user, "time_tracking")
+    return feature_time(db, feature, user)
+
+
+@router.post("/features/{feature_id}/time", status_code=201)
+def log_feature_time(feature_id: int, data: TimeIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Work on the feature itself that is not one of its issues: design, analysis, reviews, meetings."""
+    feature = _get_feature(db, feature_id, user)
+    require_feature(db, user, "time_tracking")
+    get_project(db, feature.project_id, user, section="features", write=True)
+    if data.day > date.today() + timedelta(days=1):
+        raise HTTPException(422, "Time cannot be logged for a future date")
+    entry = TimeEntry(
+        feature_id=feature.id, user_id=user.id, day=data.day, hours=round(data.hours, 2),
+        note=data.note.strip(), rate=user.hourly_rate,
+    )
+    db.add(entry)
+    feature.updated_at = utcnow()
+    log_activity(db, feature.project_id, user, f"logged {entry.hours:g}h on feature “{feature.title}”")
+    db.commit()
+    return time_out(entry)
+
+
 @router.delete("/time/{entry_id}", status_code=204)
 def delete_time(entry_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     entry = db.get(TimeEntry, entry_id)
     if not entry:
         raise HTTPException(404, "Time entry not found")
+    if entry.feature_id is not None:
+        feature = _get_feature(db, entry.feature_id, user)
+        if entry.user_id != user.id and not can_manage(feature.project, user):
+            raise HTTPException(403, "You can only remove your own time entries")
+        db.delete(entry)
+        db.commit()
+        return
     issue = _get_issue(db, entry.issue_id, user)
     if entry.user_id != user.id and not can_manage(issue.project, user):
         raise HTTPException(403, "You can only remove your own time entries")
@@ -385,28 +452,27 @@ def timesheet(
     if target != user.id and db.get(User, target) is None:
         raise HTTPException(404, "User not found")
     visible = [p.id for p in db.scalars(visible_projects_query(user)).all()]
+    from .delivery import time_entries_query
+
     entries = db.scalars(
-        select(TimeEntry)
-        .join(Issue)
-        .where(
-            TimeEntry.user_id == target,
-            TimeEntry.day >= start,
-            TimeEntry.day <= end,
-            Issue.project_id.in_(visible or [0]),
-        )
+        time_entries_query(visible)
+        .where(TimeEntry.user_id == target, TimeEntry.day >= start, TimeEntry.day <= end)
         .order_by(TimeEntry.day, TimeEntry.id)
     ).all()
-    return [
-        {
-            **time_out(t),
-            "issue_key": f"{t.issue.project.key}-{t.issue.number}",
-            "issue_title": t.issue.title,
-            "project_id": t.issue.project_id,
-            "project_name": t.issue.project.name,
-            "project_color": t.issue.project.color,
-        }
-        for t in entries
-    ]
+
+    def where(t: TimeEntry) -> dict:
+        if t.issue is not None:
+            project = t.issue.project
+            return {"issue_key": f"{project.key}-{t.issue.number}", "issue_title": t.issue.title, "feature_title": None, "project": project}
+        project = t.feature.project
+        return {"issue_key": None, "issue_title": None, "feature_title": t.feature.title, "project": project}
+
+    rows = []
+    for t in entries:
+        info = where(t)
+        project = info.pop("project")
+        rows.append({**time_out(t), **info, "project_id": project.id, "project_name": project.name, "project_color": project.color})
+    return rows
 
 
 def import_legacy_time(db: Session) -> None:

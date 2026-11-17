@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Download, Gauge, Pencil, Printer, RotateCcw, Trash2, Wallet } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, Gauge, Pencil, Printer, RotateCcw, Trash2, Wallet, Layers } from 'lucide-react'
 import { api, notifyChanged, onChanged } from '../api'
 import { useAuth, useConfirm, useToast } from '../context'
 import { UpgradeNotice, useFeature } from '../components/License'
@@ -93,8 +93,22 @@ export function BudgetCard({ project, reload }) {
               {data.hours}h logged{data.remaining != null && ` · ${over ? 'over by' : 'remaining'} ${money(Math.abs(data.remaining), data.currency)}`}
               {data.unpriced_hours > 0 && <> · <span className="danger-text">{data.unpriced_hours}h have no hourly rate</span> (set rates under Users)</>}
             </div>
+            {data.features?.length > 0 && (
+              <div>
+                <div className="section-title" style={{ marginBottom: 4 }}>By feature</div>
+                {data.features.map((f) => (
+                  <div className="time-row" key={f.feature?.id ?? 'none'}>
+                    <Layers size={15} className="faint" />
+                    <span className="grow truncate">{f.feature ? f.feature.title : <span className="muted">Not linked to a feature</span>}</span>
+                    <span className="muted small" title="Logged on the feature itself, out of the total">{f.direct_hours > 0 ? `${f.direct_hours}h direct · ` : ''}{f.hours}h</span>
+                    <b style={{ minWidth: 80, textAlign: 'right' }}>{money(f.cost, data.currency)}</b>
+                  </div>
+                ))}
+              </div>
+            )}
             {data.people.length > 0 && (
               <div>
+                <div className="section-title" style={{ marginBottom: 4 }}>By person</div>
                 {data.people.map((p) => (
                   <div className="time-row" key={p.user?.id ?? 'none'}>
                     <Avatar user={p.user} size={20} />

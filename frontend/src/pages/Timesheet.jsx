@@ -42,15 +42,17 @@ export default function Timesheet() {
     for (const e of entries || []) {
       const column = Math.round((Date.parse(`${e.day}T00:00:00Z`) / 86400000) - weekStart)
       if (column < 0 || column > 6) continue
-      if (!byIssue.has(e.issue_id)) byIssue.set(e.issue_id, { ...e, cells: Array(7).fill(0), total: 0, notes: [] })
-      const row = byIssue.get(e.issue_id)
+      // One row per issue, or per feature for time logged straight on a feature.
+      const key = e.issue_id ? `i${e.issue_id}` : `f${e.feature_id}`
+      if (!byIssue.has(key)) byIssue.set(key, { ...e, key, cells: Array(7).fill(0), total: 0, notes: [] })
+      const row = byIssue.get(key)
       row.cells[column] += e.hours
       row.total += e.hours
       if (e.note) row.notes.push(e.note)
       dayTotals[column] += e.hours
     }
     return {
-      rows: [...byIssue.values()].sort((a, b) => a.project_name.localeCompare(b.project_name) || a.issue_key.localeCompare(b.issue_key)),
+      rows: [...byIssue.values()].sort((a, b) => a.project_name.localeCompare(b.project_name) || (a.issue_key || `~${a.feature_title}`).localeCompare(b.issue_key || `~${b.feature_title}`)),
       totals: dayTotals,
       grand: dayTotals.reduce((a, b) => a + b, 0),
     }
@@ -64,8 +66,8 @@ export default function Timesheet() {
         { label: 'Date', value: (e) => e.day },
         { label: 'Person', value: (e) => e.user?.full_name },
         { label: 'Project', value: (e) => e.project_name },
-        { label: 'Issue', value: (e) => e.issue_key },
-        { label: 'Title', value: (e) => e.issue_title },
+        { label: 'Issue', value: (e) => e.issue_key || 'Feature' },
+        { label: 'Title', value: (e) => e.issue_title || e.feature_title },
         { label: 'Hours', value: (e) => e.hours },
         { label: 'Note', value: (e) => e.note },
       ],
@@ -120,11 +122,15 @@ export default function Timesheet() {
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.issue_id}>
+                <tr key={row.key}>
                   <td>
-                    <a href="#" onClick={(e) => { e.preventDefault(); openIssue(row.issue_id) }} style={{ color: 'inherit', fontWeight: 600 }}>
-                      <span className="issue-key">{row.issue_key}</span> {row.issue_title}
-                    </a>
+                    {row.issue_id ? (
+                      <a href="#" onClick={(e) => { e.preventDefault(); openIssue(row.issue_id) }} style={{ color: 'inherit', fontWeight: 600 }}>
+                        <span className="issue-key">{row.issue_key}</span> {row.issue_title}
+                      </a>
+                    ) : (
+                      <span style={{ fontWeight: 600 }}><span className="issue-key">Feature</span> {row.feature_title}</span>
+                    )}
                     <div className="faint small row" style={{ gap: 6 }}>
                       <span className="nav-dot" style={{ background: row.project_color, margin: 0 }} />{row.project_name}
                     </div>

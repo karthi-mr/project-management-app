@@ -63,7 +63,7 @@ ADDED_COLUMNS = {
         "hourly_rate": "FLOAT",
         "weekly_capacity": "FLOAT NOT NULL DEFAULT 40",
     },
-    "time_entries": {"rate": "FLOAT"},
+    "time_entries": {"rate": "FLOAT", "feature_id": "INTEGER REFERENCES features(id) ON DELETE CASCADE"},
     "features": {"milestone_id": "INTEGER REFERENCES milestones(id) ON DELETE SET NULL"},
     "conversations": {
         "name": "VARCHAR(80)",
@@ -194,6 +194,9 @@ def migrate(target: Engine | None = None) -> None:
                 target = f"uq_users_org_{column}"
                 if target not in indexes and target not in uniques:
                     conn.exec_driver_sql(f"CREATE UNIQUE INDEX {target} ON users (org_id, {column})")
+        # Time can be logged straight on a feature, so a time entry no longer always has an issue.
+        if "time_entries" in tables:
+            _issue_optional_on_time_entries(conn, dialect)
         # Every workspace has a random 8-digit ID that people type to sign in.
         if "organizations" in tables:
             from .models import new_public_id
@@ -209,6 +212,29 @@ def migrate(target: Engine | None = None) -> None:
             uniques = {uc["name"] for uc in inspector.get_unique_constraints("organizations")}
             if not any("public_id" in (n or "") for n in indexes | uniques):
                 conn.exec_driver_sql("CREATE UNIQUE INDEX uq_organizations_public_id ON organizations (public_id)")
+
+
+def _issue_optional_on_time_entries(conn, dialect: str) -> None:
+    columns = {c["name"]: c for c in inspect(conn).get_columns("time_entries")}
+    if not columns["issue_id"]["nullable"]:
+        if dialect == "sqlite":
+            # SQLite cannot change a column, so the table is rebuilt with the same rows.
+            from .models import TimeEntry
+
+            names = ", ".join(columns)
+            # Fill gaps the new table does not allow, so an unusual old row can never block an upgrade.
+            fill = {"created_at": "COALESCE(created_at, CURRENT_TIMESTAMP)", "note": "COALESCE(note, '')"}
+            values = ", ".join(fill.get(name, name) for name in columns)
+            conn.exec_driver_sql("ALTER TABLE time_entries RENAME TO time_entries_old")
+            for ix in inspect(conn).get_indexes("time_entries_old"):
+                conn.exec_driver_sql(f"DROP INDEX IF EXISTS {ix['name']}")
+            TimeEntry.__table__.create(conn)
+            conn.exec_driver_sql(f"INSERT INTO time_entries ({names}) SELECT {values} FROM time_entries_old")
+            conn.exec_driver_sql("DROP TABLE time_entries_old")
+        else:
+            conn.exec_driver_sql("ALTER TABLE time_entries ALTER COLUMN issue_id DROP NOT NULL")
+    if "ix_time_entries_feature_id" not in {ix["name"] for ix in inspect(conn).get_indexes("time_entries")}:
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_time_entries_feature_id ON time_entries (feature_id)")
 
 
 def get_db():
