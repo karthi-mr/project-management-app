@@ -465,12 +465,25 @@ the 10 recovery codes. From then on, signing in asks for the 6-digit code after 
 
 ## Tests
 
-API tests live in `backend/tests/`. Run them only against a throwaway database, never real data:
+The backend has an automated test suite (`backend/tests/`, 106 tests) covering sign-in and two-factor,
+workspace isolation, plans and licences, billing, the sign-off lifecycle, projects and issues, test
+management, client links and the owner console. Each run uses its own brand-new database, so it never
+touches your data.
 
 ```bash
-cd backend && PM_DATA_DIR=/tmp/trackly-test .venv/bin/uvicorn app.main:app --port 8791
+cd backend && .venv/bin/pip install -r requirements-dev.txt
 ```
 
 ```bash
-cd backend && BASE=http://127.0.0.1:8791 PW='Admin@123' .venv/bin/python tests/api_two_factor.py
+cd backend && .venv/bin/pytest
 ```
+
+To run the same tests on PostgreSQL, point `TEST_DATABASE_URL` at an empty database whose name contains
+`test`:
+
+```bash
+cd backend && TEST_DATABASE_URL=postgresql://trackly:trackly@127.0.0.1:55432/trackly_test .venv/bin/pytest
+```
+
+GitHub runs the tests on both databases, and checks that the frontend builds, on every push
+(`.github/workflows/tests.yml`).
