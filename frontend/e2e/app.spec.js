@@ -215,3 +215,21 @@ test('a customer adds an add-on to their plan and gets the feature once it is ac
   await expect(page.getByText('Test management is not part of your plan')).toHaveCount(0)
   errors.check()
 })
+
+test('changing the currency shows the converted prices before saving', async ({ page, request }) => {
+  const errors = watchErrors(page)
+  await signInAs(page, await ownerToken(request))
+  await page.goto('/platform?tab=settings')
+  const currency = page.getByLabel('Currency')
+  await currency.fill('INR')
+  await expect(page.getByText('Changing the currency from USD to INR')).toBeVisible()
+  await expect(page.getByRole('spinbutton', { name: 'Exchange rate' })).toHaveValue('84')
+  const starter = page.locator('.currency-change tr', { hasText: 'Starter' })
+  await expect(starter).toContainText('₹499')
+  await expect(starter).toContainText('₹4,990')
+  await page.getByRole('checkbox', { name: /friendly prices/ }).uncheck()
+  await expect(starter).toContainText('₹504')
+  await currency.fill('USD') // nothing saved
+  await expect(page.getByText('Changing the currency from')).toHaveCount(0)
+  errors.check()
+})

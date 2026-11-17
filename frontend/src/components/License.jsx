@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertTriangle, Check, Clock, Lock, Minus, Printer } from 'lucide-react'
+import { AlertTriangle, Check, Clock, Lock, Plus, Printer } from 'lucide-react'
 import { api } from '../api'
 import { useAuth } from '../context'
 import { Badge, Modal, Spinner, formatDate } from '../ui'
@@ -172,15 +172,12 @@ export function PlanFeatures({ plan }) {
       <li><Check size={14} /> {plan.max_users == null ? 'Unlimited users' : `Up to ${plan.max_users} users`}</li>
       <li><Check size={14} /> {plan.max_projects == null ? 'Unlimited projects' : `${plan.max_projects} projects`}</li>
       <li><Check size={14} /> Issues, boards, Gantt, roadmap, documents and chat</li>
-      {Object.entries(FEATURE_LABELS).map(([key, label]) => {
-        const included = plan.features.includes(key)
-        return (
-          <li key={key} className={included ? '' : 'off'}>
-            {included ? <Check size={14} /> : <Minus size={14} />} {label}
-            {!included && ADDON_FOR[key] && <span className="addon-tag">add-on</span>}
-          </li>
-        )
-      })}
+      {Object.entries(FEATURE_LABELS).filter(([key]) => plan.features.includes(key)).map(([key, label]) => (
+        <li key={key}><Check size={14} /> {label}</li>
+      ))}
+      {Object.keys(FEATURE_LABELS).some((key) => !plan.features.includes(key)) && (
+        <li className="off"><Plus size={14} /> More with add-ons</li>
+      )}
     </ul>
   )
 }

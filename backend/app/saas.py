@@ -440,6 +440,63 @@ def price_quote(db: Session, org: Organization, plan: Plan, seats: int, period: 
     }
 
 
+# ───────────── Changing the currency ─────────────
+
+# Rough rates to start from when the platform owner switches currency; they always confirm or edit it.
+SUGGESTED_RATES = {
+    ("USD", "INR"): 84, ("EUR", "INR"): 90, ("GBP", "INR"): 106, ("AED", "INR"): 23, ("SGD", "INR"): 62,
+    ("USD", "EUR"): 0.92, ("USD", "GBP"): 0.79, ("EUR", "USD"): 1.09, ("GBP", "USD"): 1.27,
+}
+
+
+def suggested_rate(old: str, new: str) -> float | None:
+    if old == new:
+        return 1
+    if (old, new) in SUGGESTED_RATES:
+        return SUGGESTED_RATES[(old, new)]
+    if (new, old) in SUGGESTED_RATES:
+        return round(1 / SUGGESTED_RATES[(new, old)], 6)
+    return None
+
+
+def friendly_price(value: float) -> float:
+    """A price people expect to see: 504 -> 499, 1680 -> 1699, 5.94 -> 6, 0 stays 0."""
+    if value <= 0:
+        return 0
+    if value >= 100:
+        return max(49, round(value / 50) * 50 - 1)
+    if value >= 10:
+        return float(round(value))
+    return max(0.5, round(value * 2) / 2)
+
+
+def convert_prices(db: Session, rate: float, friendly: bool = True, apply: bool = False) -> list[dict]:
+    """Every plan, add-on and fixed-amount coupon priced in the new currency. Yearly prices that were
+    ten times the monthly one stay ten times the (rounded) monthly one."""
+    from .models import Coupon
+
+    def money(value: float) -> float:
+        converted = value * rate
+        return friendly_price(converted) if friendly else round(converted, 2)
+
+    rows = []
+    for kind, items in (("Plan", db.scalars(select(Plan).order_by(Plan.sort, Plan.id)).all()), ("Add-on", all_addons(db))):
+        for item in items:
+            monthly = money(item.price_monthly)
+            ten_times = abs(item.price_yearly - item.price_monthly * 10) < 0.01
+            yearly = round(monthly * 10, 2) if ten_times else money(item.price_yearly)
+            rows.append({"kind": kind, "name": item.name, "old_monthly": item.price_monthly, "old_yearly": item.price_yearly,
+                         "monthly": monthly, "yearly": yearly})
+            if apply:
+                item.price_monthly, item.price_yearly = monthly, yearly
+    for coupon in db.scalars(select(Coupon).where(Coupon.amount_off > 0)).all():
+        new = money(coupon.amount_off)
+        rows.append({"kind": "Coupon", "name": coupon.code, "old_monthly": coupon.amount_off, "monthly": new})
+        if apply:
+            coupon.amount_off = new
+    return rows
+
+
 def purge_organization(db: Session, org: Organization) -> None:
     """Permanently delete a workspace and everything in it."""
     for project in db.scalars(

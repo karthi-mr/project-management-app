@@ -757,19 +757,78 @@ function Invoices({ onInvoice }) {
   )
 }
 
+/** Shown while the currency is being changed: the exchange rate, and what every price becomes. */
+function CurrencyChange({ from, to, onChange }) {
+  const [rate, setRate] = useState('')
+  const [friendly, setFriendly] = useState(true)
+  const [preview, setPreview] = useState(null)
+  useEffect(() => {
+    api(`/platform/currency/rate?to=${to}`).then((r) => setRate(r.rate ? String(r.rate) : '')).catch(() => {})
+  }, [to])
+  useEffect(() => {
+    onChange({ rate: Number(rate), friendly })
+    if (!(Number(rate) > 0)) return setPreview(null)
+    const timer = setTimeout(() => {
+      api('/platform/currency', { method: 'POST', body: { currency: to, rate: Number(rate), friendly, preview: true } })
+        .then((r) => setPreview(r.rows)).catch(() => setPreview(null))
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [rate, friendly, to]) // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div className="currency-change stack" style={{ gap: 10 }}>
+      <div><b>Changing the currency from {from} to {to}</b>
+        <div className="small muted">Prices are converted too, so a {from} price does not simply become the same number in {to}. Requests and invoices already sent keep their own currency.</div>
+      </div>
+      <div className="row row-wrap" style={{ gap: 12, alignItems: 'flex-end' }}>
+        <Field label={`1 ${from} =`}>
+          <span className="row" style={{ gap: 6 }}><input className="input" type="number" min="0" step="any" style={{ maxWidth: 140 }} value={rate} onChange={(e) => setRate(e.target.value)} required aria-label="Exchange rate" /> {to}</span>
+        </Field>
+        <label className="opt-row" style={{ marginBottom: 8 }}><input type="checkbox" checked={friendly} onChange={(e) => setFriendly(e.target.checked)} /> Round to friendly prices (for example 499 and 999)</label>
+      </div>
+      <span className="hint">The suggested rate is approximate; check today's rate.</span>
+      {preview && (
+        <div className="table-wrap">
+          <table className="table">
+            <thead><tr><th>Price</th><th>Per user / month now</th><th>Becomes</th><th>Per user / year</th></tr></thead>
+            <tbody>
+              {preview.filter((r) => r.old_monthly > 0).map((r) => (
+                <tr key={`${r.kind}${r.name}`}>
+                  <td>{r.name} <span className="faint small">{r.kind}</span></td>
+                  <td className="muted">{money(r.old_monthly, from)}</td>
+                  <td><b>{money(r.monthly, to)}</b></td>
+                  <td>{r.yearly != null ? money(r.yearly, to) : ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Settings() {
   const toast = useToast()
   const [form, setForm] = useState(null)
+  const [saved, setSaved] = useState('')
+  const [conversion, setConversion] = useState(null)
   const [busy, setBusy] = useState(false)
-  useEffect(() => { api('/platform/settings').then(setForm).catch((e) => toast(e.message, 'error')) }, [toast])
+  useEffect(() => { api('/platform/settings').then((f) => { setForm(f); setSaved(f.currency) }).catch((e) => toast(e.message, 'error')) }, [toast])
   if (!form) return <Spinner page />
   const set = (key) => (e) => setForm({ ...form, [key]: e.target.value })
   const save = async (e) => {
     e.preventDefault()
     setBusy(true)
     try {
-      setForm(await api('/platform/settings', { method: 'PUT', body: { ...form, currency: form.currency.toUpperCase(), trial_days: Number(form.trial_days) } }))
-      toast('Settings saved')
+      const currency = form.currency.toUpperCase()
+      if (currency !== saved) {
+        if (!(conversion?.rate > 0)) throw new Error('Enter the exchange rate for the new currency')
+        await api('/platform/currency', { method: 'POST', body: { currency, rate: conversion.rate, friendly: conversion.friendly } })
+      }
+      const next = await api('/platform/settings', { method: 'PUT', body: { ...form, currency, trial_days: Number(form.trial_days) } })
+      setForm(next)
+      setSaved(next.currency)
+      toast(currency !== saved ? `Settings saved. Prices are now in ${currency}.` : 'Settings saved')
     } catch (err) {
       toast(err.message, 'error')
     }
@@ -783,6 +842,9 @@ function Settings() {
         <Field label="Currency" hint="Three-letter code, for example USD, EUR or INR."><input className="input" value={form.currency} onChange={set('currency')} pattern="[A-Za-z]{3}" maxLength={3} required /></Field>
         <Field label="Free trial length (days)"><input className="input" type="number" min="1" max="365" value={form.trial_days} onChange={set('trial_days')} required /></Field>
       </div>
+      {/^[A-Za-z]{3}$/.test(form.currency) && form.currency.toUpperCase() !== saved && (
+        <CurrencyChange key={form.currency.toUpperCase()} from={saved} to={form.currency.toUpperCase()} onChange={setConversion} />
+      )}
       <label className="opt-row"><input type="checkbox" checked={form.allow_signup} onChange={(e) => setForm({ ...form, allow_signup: e.target.checked })} /> Anyone can sign up for a workspace (turn off to create workspaces yourself)</label>
       <Field label="Payment instructions" hint="Shown to workspaces when they request a plan. Put your company's bank details here.">
         <textarea className="textarea" rows={7} value={form.payment_instructions} onChange={set('payment_instructions')} maxLength={5000} />

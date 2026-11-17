@@ -539,7 +539,14 @@ accounts, each with its own password and two-factor setup.
 ## Plans and add-ons
 
 Prices are per user, in the currency set in the owner console (Owner console → Settings). Yearly is
-ten times the monthly price.
+ten times the monthly price. The table shows the built-in US-dollar prices.
+
+**Changing the currency converts the prices too.** When you change the currency in Owner console →
+Settings, enter the exchange rate (a rough one is suggested) and you see every plan, add-on and coupon
+in the new currency before saving, optionally rounded to friendly prices such as ₹499 and ₹999.
+At ₹84 to the dollar the built-in prices become Starter ₹499, Professional ₹749, Business ₹999 and
+Enterprise ₹1,699 per user per month, and add-ons ₹149 or ₹249. Requests and invoices already sent
+keep their own currency.
 
 | Plan | Per user / month | Users | Projects | Adds |
 | --- | --- | --- | --- | --- |

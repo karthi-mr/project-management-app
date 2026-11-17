@@ -22,7 +22,9 @@ from ..saas import (
     FEATURES,
     addon_out,
     all_addons,
+    convert_prices,
     split_keys,
+    suggested_rate,
     create_organization,
     get_settings,
     license_status,
@@ -581,6 +583,34 @@ def update_settings(data: SettingsIn, request: Request, owner: User = Depends(re
     audit(db, owner, "platform.settings_updated", "", request)
     db.commit()
     return read_settings(owner, db)
+
+
+class CurrencyIn(BaseModel):
+    currency: str = Field(pattern=r"^[A-Z]{3}$")
+    rate: float = Field(gt=0, le=1e6)  # 1 unit of the current currency = this many of the new one
+    friendly: bool = True  # round to prices like 499 and 999
+    preview: bool = False  # only show what the prices would become
+
+
+@router.get("/currency/rate")
+def currency_rate(to: str = Query(pattern=r"^[A-Z]{3}$"), _: User = Depends(require_platform_admin), db: Session = Depends(get_db)):
+    current = get_settings(db)["currency"]
+    return {"from": current, "to": to, "rate": suggested_rate(current, to)}
+
+
+@router.post("/currency")
+def change_currency(data: CurrencyIn, request: Request, owner: User = Depends(require_platform_admin), db: Session = Depends(get_db)):
+    """Switch the selling currency and convert every price with it, so 6 USD does not become 6 INR.
+    Requests and invoices already sent keep their own currency and amounts."""
+    current = get_settings(db)["currency"]
+    rows = convert_prices(db, data.rate, data.friendly, apply=not data.preview)
+    if data.preview:
+        db.rollback()
+        return {"from": current, "to": data.currency, "rows": rows}
+    set_settings(db, {"currency": data.currency})
+    audit(db, owner, "platform.currency_changed", f"{current} → {data.currency} at {data.rate:g}", request)
+    db.commit()
+    return {"from": current, "to": data.currency, "rows": rows}
 
 
 __all__ = ["router", "DEFAULT_SETTINGS", "validate_password"]
