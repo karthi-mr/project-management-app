@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Ban, Check, Copy, Info, KeyRound, Pencil, Plus, RotateCcw, Search, ShieldCheck, Trash2, UserPlus, X } from 'lucide-react'
+import { Ban, ShieldOff, Check, Copy, Info, KeyRound, Pencil, Plus, RotateCcw, Search, ShieldCheck, Trash2, UserPlus, X } from 'lucide-react'
 import { api, notifyChanged } from '../api'
 import { useAuth, useConfirm, useToast } from '../context'
 import { PlanGate } from '../components/License'
@@ -259,6 +259,23 @@ export default function Users() {
     }
   }
 
+  const resetTwoFactor = async (u) => {
+    const ok = await confirm({
+      title: `Reset two-factor sign-in for ${u.full_name}?`,
+      message: 'Use this when they lost their phone and their recovery codes. They are signed out everywhere and sign in with their password only, then set it up again if your workspace requires it.',
+      confirmLabel: 'Reset two-factor',
+      danger: true,
+    })
+    if (!ok) return
+    try {
+      await api(`/users/${u.id}/reset-2fa`, { method: 'POST' })
+      toast(`Two-factor sign-in reset for ${u.full_name}`)
+      refresh()
+    } catch (err) {
+      toast(err.message, 'error')
+    }
+  }
+
   const toggleActive = async (u) => {
     if (u.is_active) {
       const ok = await confirm({
@@ -355,6 +372,7 @@ export default function Users() {
                     <td>
                       {!u.is_active ? <Badge color="#94a3b8">Disabled</Badge>
                         : u.must_change_password ? <Badge color="#f59e0b">Temporary password</Badge>
+                        : u.two_factor_enabled ? <Badge color="#22c55e"><ShieldCheck size={11} style={{ verticalAlign: -1 }} /> Active · 2FA</Badge>
                         : <Badge color="#22c55e">Active</Badge>}
                     </td>
                     <td className="muted small">{timeAgo(u.last_login)}</td>
@@ -364,6 +382,9 @@ export default function Users() {
                         {u.id !== me.id && (
                           <>
                             <button className="btn btn-ghost btn-sm btn-icon" title="Reset password" aria-label={`Reset password for ${u.full_name}`} onClick={() => setResetting(u)}><KeyRound size={14} /></button>
+                            {u.two_factor_enabled && (
+                              <button className="btn btn-ghost btn-sm btn-icon" title="Reset two-factor sign-in (lost phone)" aria-label={`Reset two-factor sign-in for ${u.full_name}`} onClick={() => resetTwoFactor(u)}><ShieldOff size={14} /></button>
+                            )}
                             <button className="btn btn-ghost btn-sm btn-icon" title={u.is_active ? 'Disable' : 'Enable'} aria-label={`${u.is_active ? 'Disable' : 'Enable'} ${u.full_name}`} onClick={() => toggleActive(u)}>
                               {u.is_active ? <Ban size={14} /> : <RotateCcw size={14} />}
                             </button>

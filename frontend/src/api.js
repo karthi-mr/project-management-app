@@ -60,6 +60,10 @@ export async function api(path, { method = 'GET', body } = {}) {
     if (res.status === 401 && !path.startsWith('/auth/login')) {
       window.dispatchEvent(new Event('pm:unauthorized'))
     }
+    if (res.status === 403 && detail === 'TWO_FACTOR_SETUP_REQUIRED') {
+      window.dispatchEvent(new Event('pm:two-factor-required'))
+      throw new Error('Set up two-factor sign-in first.')
+    }
     if (res.status === 403 && detail === 'PASSWORD_CHANGE_REQUIRED') {
       window.dispatchEvent(new Event('pm:password-required'))
       throw new Error('You must change your password first.')

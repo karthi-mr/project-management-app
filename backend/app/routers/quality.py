@@ -437,6 +437,7 @@ class SecurityIn(BaseModel):
     password_require_symbol: bool
     password_require_mixed_case: bool
     ip_allowlist: str = Field(default="", max_length=4000)
+    require_two_factor: bool = False
 
 
 def security_out(db: Session, org: Organization) -> dict:
@@ -445,6 +446,9 @@ def security_out(db: Session, org: Organization) -> dict:
         "password_require_symbol": bool(org.password_require_symbol),
         "password_require_mixed_case": bool(org.password_require_mixed_case),
         "ip_allowlist": org.ip_allowlist or "",
+        "require_two_factor": bool(org.require_two_factor),
+        "two_factor_users": db.scalar(select(func.count()).select_from(User).where(User.org_id == org.id, User.is_active, User.totp_enabled_at.is_not(None))),
+        "active_users": db.scalar(select(func.count()).select_from(User).where(User.org_id == org.id, User.is_active)),
         "ip_allowlist_available": has_feature(db, org.id, "security"),
         "your_ip": request_ip.get(),
     }
@@ -467,6 +471,11 @@ def save_security(data: SecurityIn, request: Request, admin: User = Depends(requ
     org.password_min_length = data.password_min_length
     org.password_require_symbol = data.password_require_symbol
     org.password_require_mixed_case = data.password_require_mixed_case
+    if data.require_two_factor and not org.require_two_factor and admin.totp_enabled_at is None:
+        raise HTTPException(422, "Turn on two-factor sign-in for your own account first (in your profile), so you are not locked out.")
+    if data.require_two_factor != bool(org.require_two_factor):
+        audit(db, admin, "security.two_factor_required" if data.require_two_factor else "security.two_factor_optional", "", request)
+    org.require_two_factor = data.require_two_factor
     allow = "\n".join(line.strip() for line in data.ip_allowlist.splitlines() if line.strip())
     if allow != (org.ip_allowlist or ""):
         if allow:
@@ -495,6 +504,27 @@ def end_session(session_id: int, request: Request, admin: User = Depends(require
         raise HTTPException(404, "Session not found")
     s.revoked = True
     audit(db, admin, "session.ended", s.user.username, request)
+    db.commit()
+
+
+@router.post("/users/{user_id}/reset-2fa", status_code=204)
+def reset_two_factor(user_id: int, request: Request, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """For someone who lost their phone and their recovery codes. They set it up again at next sign-in
+    if the workspace requires it."""
+    target = db.get(User, user_id)
+    if not target:
+        raise HTTPException(404, "User not found")
+    if target.id == admin.id:
+        raise HTTPException(400, "Turn off your own two-factor sign-in from your profile")
+    target.totp_secret = None
+    target.totp_pending_secret = None
+    target.totp_enabled_at = None
+    target.totp_last_step = None
+    target.recovery_codes = ""
+    target.token_version = (target.token_version or 0) + 1  # sign them out everywhere
+    for s in db.scalars(select(UserSession).where(UserSession.user_id == target.id, UserSession.revoked.is_(False))).all():
+        s.revoked = True
+    audit(db, admin, "2fa.reset_by_admin", target.username, request)
     db.commit()
 
 

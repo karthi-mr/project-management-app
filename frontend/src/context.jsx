@@ -35,8 +35,18 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false))
   }, [refresh, logout])
 
+  // Second sign-in step: the authenticator or recovery code.
+  const finishLogin = useCallback(
+    async (challenge, code) => {
+      const session = await api('/auth/login/2fa', { method: 'POST', body: { challenge, code } })
+      setSession(session)
+      return session
+    },
+    [setSession],
+  )
+
   // Hold the live connection open only while someone is fully signed in.
-  const signedIn = Boolean(user && !user.must_change_password)
+  const signedIn = Boolean(user && !user.must_change_password && !user.two_factor_setup_required)
   useEffect(() => {
     if (!signedIn) return undefined
     connectRealtime()
@@ -54,17 +64,21 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     const onUnauthorized = () => logout()
     const onPasswordRequired = () => setUser((u) => (u ? { ...u, must_change_password: true } : u))
+    const onTwoFactorRequired = () => setUser((u) => (u ? { ...u, two_factor_setup_required: true } : u))
     window.addEventListener('pm:unauthorized', onUnauthorized)
     window.addEventListener('pm:password-required', onPasswordRequired)
+    window.addEventListener('pm:two-factor-required', onTwoFactorRequired)
     return () => {
       window.removeEventListener('pm:unauthorized', onUnauthorized)
       window.removeEventListener('pm:password-required', onPasswordRequired)
+      window.removeEventListener('pm:two-factor-required', onTwoFactorRequired)
     }
   }, [logout])
 
   const login = useCallback(
     async (username, password) => {
       const session = await api('/auth/login', { method: 'POST', body: { username, password } })
+      if (session.two_factor_required) return { challenge: session.challenge } // the code comes next
       setSession(session)
       return session.user
     },
@@ -72,8 +86,8 @@ export function AuthProvider({ children }) {
   )
 
   const value = useMemo(
-    () => ({ user, loading, login, logout, setSession, setUser, refresh }),
-    [user, loading, login, logout, setSession, refresh],
+    () => ({ user, loading, login, finishLogin, logout, setSession, setUser, refresh }),
+    [user, loading, login, finishLogin, logout, setSession, refresh],
   )
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

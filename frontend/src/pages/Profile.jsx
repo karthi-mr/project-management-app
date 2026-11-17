@@ -6,6 +6,7 @@ import { ACCENTS, Avatar, Field, PasswordRules, Spinner, formatDate, passwordVal
 import ThemeToggle from '../components/ThemeToggle'
 import { LANGUAGES, timeZones } from '../i18n'
 import { MySessions } from '../components/Security'
+import { TwoFactorCard } from '../components/TwoFactor'
 import { PasswordInput } from './AuthPages'
 
 export default function Profile() {
@@ -173,6 +174,8 @@ export default function Profile() {
             </Field>
           </div>
         </div>
+
+        <TwoFactorCard />
 
         <MySessions />
 

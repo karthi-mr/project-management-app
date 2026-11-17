@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, AtSign, Building2, Check, Mail, Eye, EyeOff, KeyRound, Lock, ShieldCheck, User } from 'lucide-react'
 import { api } from '../api'
-import { useAuth } from '../context'
+import { useAuth, useToast } from '../context'
 import { Field, PasswordRules, Spinner, passwordValid } from '../ui'
 import ThemeToggle from '../components/ThemeToggle'
 import { useT } from '../i18n'
+import { CodeInput, TwoFactorSetup } from '../components/TwoFactor'
 
 function AuthShell({ children, brand }) {
   useT()
@@ -57,7 +58,11 @@ export function PasswordInput({ value, onChange, placeholder, autoFocus, autoCom
 }
 
 export function Login() {
-  const { login } = useAuth()
+  const { login, finishLogin } = useAuth()
+  const toast = useToast()
+  const [challenge, setChallenge] = useState(null)
+  const [code, setCode] = useState('')
+  const [useRecovery, setUseRecovery] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
   const t = useT()
@@ -81,12 +86,68 @@ export function Login() {
     setError('')
     setBusy(true)
     try {
-      const user = await login(username, password)
-      navigate(user.must_change_password ? '/change-password' : location.state?.from || '/', { replace: true })
+      const result = await login(username, password)
+      if (result.challenge) {
+        setChallenge(result.challenge)
+        setPassword('')
+        setBusy(false)
+        return
+      }
+      navigate(result.must_change_password ? '/change-password' : location.state?.from || '/', { replace: true })
     } catch (err) {
       setError(err.message)
       setBusy(false)
     }
+  }
+
+  const submitCode = async (e) => {
+    e.preventDefault()
+    setError('')
+    setBusy(true)
+    try {
+      const session = await finishLogin(challenge, code)
+      if (session.recovery_codes_left != null) {
+        const left = session.recovery_codes_left
+        toast(`Signed in with a recovery code. ${left} left${left <= 3 ? ': make new ones in your profile' : ''}.`, left <= 3 ? 'error' : 'info')
+      }
+      navigate(session.user.must_change_password ? '/change-password' : location.state?.from || '/', { replace: true })
+    } catch (err) {
+      if (/expired/i.test(err.message)) {
+        setChallenge(null)
+        setCode('')
+      }
+      setError(err.message)
+      setCode('')
+      setBusy(false)
+    }
+  }
+
+  if (challenge) {
+    return (
+      <AuthShell brand={brand}>
+        <div>
+          <h1>Two-factor sign-in</h1>
+          <p className="muted">{useRecovery ? 'Enter one of your recovery codes. Each one works once.' : 'Enter the 6-digit code from your authenticator app.'}</p>
+        </div>
+        <form onSubmit={submitCode}>
+          {error && <div className="form-error">{error}</div>}
+          <Field label={useRecovery ? 'Recovery code' : 'Code'}>
+            <CodeInput key={useRecovery ? 'r' : 'c'} value={code} onChange={setCode} recovery={useRecovery} autoFocus />
+          </Field>
+          <button className="btn btn-primary btn-block" disabled={busy || (!useRecovery && code.length !== 6)}>
+            {busy ? <Spinner /> : 'Verify and sign in'}
+          </button>
+        </form>
+        <div className="auth-foot stack" style={{ gap: 6 }}>
+          <button type="button" className="link-btn" style={{ fontWeight: 500 }} onClick={() => { setUseRecovery((v) => !v); setCode(''); setError('') }}>
+            {useRecovery ? 'Use a code from the app instead' : 'Lost your phone? Use a recovery code'}
+          </button>
+          <button type="button" className="link-btn" style={{ fontWeight: 500, color: 'var(--text-3)' }} onClick={() => { setChallenge(null); setCode(''); setError('') }}>
+            <ArrowLeft size={13} style={{ verticalAlign: -2 }} /> Back
+          </button>
+        </div>
+      </AuthShell>
+    )
   }
 
   return (
@@ -344,6 +405,28 @@ export function ChangePassword() {
         <button className="btn btn-ghost btn-sm" onClick={logout}>
           <KeyRound size={14} /> Sign in as someone else
         </button>
+      </div>
+    </AuthShell>
+  )
+}
+
+/** The workspace requires two-factor sign-in and this person has not set it up yet. */
+export function SetupTwoFactor() {
+  const { user, loading, setUser, logout } = useAuth()
+  const navigate = useNavigate()
+  if (loading) return <Spinner page />
+  if (!user) return <Navigate to="/login" replace />
+  if (user.must_change_password) return <Navigate to="/change-password" replace />
+  if (!user.two_factor_setup_required) return <Navigate to="/" replace />
+  return (
+    <AuthShell>
+      <div>
+        <h1>Set up two-factor sign-in</h1>
+        <p className="muted">{user.org?.name || 'Your workspace'} requires a code from your phone in addition to your password. It takes about a minute.</p>
+      </div>
+      <TwoFactorSetup onDone={(u) => { setUser(u); navigate('/', { replace: true }) }} />
+      <div className="auth-foot">
+        <button type="button" className="link-btn" style={{ fontWeight: 500 }} onClick={logout}>Sign out</button>
       </div>
     </AuthShell>
   )

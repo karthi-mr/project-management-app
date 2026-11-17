@@ -16,7 +16,7 @@ export function SecuritySettings() {
 
   const load = useCallback(() => api('/admin/security').then((d) => {
     setData(d)
-    setForm({ password_min_length: d.password_min_length, password_require_symbol: d.password_require_symbol, password_require_mixed_case: d.password_require_mixed_case, ip_allowlist: d.ip_allowlist })
+    setForm({ password_min_length: d.password_min_length, password_require_symbol: d.password_require_symbol, password_require_mixed_case: d.password_require_mixed_case, ip_allowlist: d.ip_allowlist, require_two_factor: d.require_two_factor })
   }).catch((e) => toast(e.message, 'error')), [toast])
   useEffect(() => { load() }, [load])
   if (!data || !form) return <Spinner page />
@@ -63,6 +63,18 @@ export function SecuritySettings() {
         </Field>
         <label className="opt-row"><input type="checkbox" checked={form.password_require_mixed_case} onChange={(e) => setForm({ ...form, password_require_mixed_case: e.target.checked })} /> Must contain upper and lower case letters</label>
         <label className="opt-row"><input type="checkbox" checked={form.password_require_symbol} onChange={(e) => setForm({ ...form, password_require_symbol: e.target.checked })} /> Must contain a symbol</label>
+
+        <h2 style={{ marginTop: 8 }}>Two-factor sign-in</h2>
+        <div className="small muted">{data.two_factor_users} of {data.active_users} active people have it on.</div>
+        <label className="opt-row">
+          <input type="checkbox" checked={form.require_two_factor} onChange={(e) => setForm({ ...form, require_two_factor: e.target.checked })} />
+          Require two-factor sign-in for everyone in this workspace
+        </label>
+        <span className="hint">
+          {user.two_factor_enabled
+            ? 'People without it are asked to set it up the next time they use the app, before they can do anything else.'
+            : 'Turn it on for your own account first (in your profile), so you cannot lock yourself out.'}
+        </span>
 
         <h2 style={{ marginTop: 8 }}>Allowed networks</h2>
         {data.ip_allowlist_available ? (

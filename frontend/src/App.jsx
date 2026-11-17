@@ -2,7 +2,7 @@ import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { useAuth } from './context'
 import { Spinner } from './ui'
 import Layout from './components/Layout'
-import { ChangePassword, ForgotPassword, Login, Signup } from './pages/AuthPages'
+import { ChangePassword, ForgotPassword, Login, SetupTwoFactor, Signup } from './pages/AuthPages'
 import Billing from './pages/Billing'
 import Platform from './pages/Platform'
 import Support from './pages/Support'
@@ -27,6 +27,7 @@ function RequireAuth() {
   if (!user && location.pathname === '/') return <Navigate to="/welcome" replace />
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />
   if (user.must_change_password) return <Navigate to="/change-password" replace />
+  if (user.two_factor_setup_required) return <Navigate to="/setup-2fa" replace />
   return <Outlet />
 }
 
@@ -62,6 +63,7 @@ export default function App() {
       <Route path="/share/:token" element={<SharedProject />} />
       <Route path="/status" element={<StatusPage />} />
       <Route path="/change-password" element={<ChangePassword />} />
+      <Route path="/setup-2fa" element={<SetupTwoFactor />} />
       <Route element={<RequireAuth />}>
         <Route element={<Layout />}>
           <Route index element={<Dashboard />} />

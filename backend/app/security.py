@@ -134,6 +134,8 @@ def get_token_user(
         user_id = int(payload["sub"])
     except (jwt.PyJWTError, KeyError, ValueError):
         raise unauthorized
+    if payload.get("purpose"):
+        raise unauthorized  # a half-finished sign-in (waiting for the second step) is not a sign-in
     user = db.get(User, user_id)
     if not user or not user.is_active or payload.get("ver") != user.token_version:
         raise unauthorized
@@ -178,11 +180,18 @@ WRITABLE_WHEN_LOCKED = ("/api/auth/", "/api/billing", "/api/platform", "/api/not
 
 
 def get_current_user(user: User = Depends(get_token_user), db: Session = Depends(get_db)) -> User:
-    """Authenticated user who has completed the mandatory password change, in a workspace
-    that is allowed to make this request."""
+    """Authenticated user who has completed the mandatory password change (and two-factor setup,
+    where the workspace requires it), in a workspace that is allowed to make this request."""
+    from .access import request_path
+
     if user.must_change_password:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "PASSWORD_CHANGE_REQUIRED")
-    from .access import is_write_request, request_path
+    if user.totp_enabled_at is None and not request_path.get().startswith("/api/auth/"):
+        from .saas import get_org as _org
+
+        if _org(db, user).require_two_factor:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "TWO_FACTOR_SETUP_REQUIRED")
+    from .access import is_write_request
     from .saas import get_org, license_status
 
     if is_write_request() and not request_path.get().startswith(WRITABLE_WHEN_LOCKED):
@@ -196,6 +205,25 @@ def get_current_user(user: User = Depends(get_token_user), db: Session = Depends
                 "An administrator can renew it on the Billing page.",
             )
     return user
+
+
+def create_challenge(user: User) -> str:
+    """Proof that the password was right, valid for five minutes, to finish signing in with a code."""
+    payload = {
+        "sub": str(user.id), "ver": user.token_version, "purpose": "2fa",
+        "exp": datetime.now(timezone.utc) + timedelta(minutes=5),
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def read_challenge(token: str) -> tuple[int, int] | None:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("purpose") != "2fa":
+            return None
+        return int(payload["sub"]), payload.get("ver")
+    except (jwt.PyJWTError, KeyError, ValueError, TypeError):
+        return None
 
 
 def require_admin(user: User = Depends(get_current_user)) -> User:

@@ -50,6 +50,7 @@ def user_full(u: User) -> dict:
         "is_platform_admin": bool(u.is_platform_admin),
         "is_active": u.is_active,
         "must_change_password": u.must_change_password,
+        "two_factor_enabled": u.totp_enabled_at is not None,
         "created_at": dt(u.created_at),
         "last_login": dt(u.last_login),
         "preferences": _json(u.preferences, {}),

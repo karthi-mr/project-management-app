@@ -59,6 +59,12 @@ class User(Base):
     org_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     is_platform_admin: Mapped[bool] = mapped_column(Boolean, default=False)  # runs the SaaS itself
     terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Two-factor sign-in (see twofactor.py). The pending secret is the one being set up.
+    totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    totp_pending_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    totp_enabled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    totp_last_step: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    recovery_codes: Mapped[str] = mapped_column(Text, default="")  # JSON list of hashes
     hourly_rate: Mapped[float | None] = mapped_column(Float, nullable=True)  # cost per hour, for budgets
     weekly_capacity: Mapped[float] = mapped_column(Float, default=40)  # hours per week, for workload
     preferences: Mapped[str] = mapped_column(Text, default="")  # JSON, per-user UI settings
@@ -705,6 +711,7 @@ class Organization(Base):
     password_require_symbol: Mapped[bool] = mapped_column(Boolean, default=False)
     password_require_mixed_case: Mapped[bool] = mapped_column(Boolean, default=False)
     ip_allowlist: Mapped[str] = mapped_column(Text, default="")  # one address or CIDR range per line
+    require_two_factor: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     plan: Mapped[Plan | None] = relationship()

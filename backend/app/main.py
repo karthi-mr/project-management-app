@@ -206,6 +206,8 @@ def _ws_user(token: str) -> tuple[int, int | None] | None:
         user_id = int(payload["sub"])
     except (jwt.PyJWTError, KeyError, ValueError, TypeError):
         return None
+    if payload.get("purpose"):
+        return None
     with SessionLocal() as db:
         user = db.get(User, user_id)
         if not user or not user.is_active or user.must_change_password or payload.get("ver") != user.token_version:

@@ -448,3 +448,29 @@ not as one project-wide phase on the Overview.
   sent yourself is approved by someone else, unless you are the only person who can approve.
 - Deploying a release no longer marks its features as released; each feature gets there through
   its own sign-off.
+
+## Two-factor sign-in
+
+Anyone can turn it on under **Profile → Two-factor sign-in**: scan the QR code with an authenticator
+app (Google Authenticator, Microsoft Authenticator, 1Password, Authy…), confirm with a code, and save
+the 10 recovery codes. From then on, signing in asks for the 6-digit code after the password.
+
+- **Lost phone:** sign in with a recovery code (each works once), or ask a workspace administrator to
+  reset two-factor under **Users** (shield icon). The person is signed out everywhere.
+- **Require it for everyone:** Users → Security → *Require two-factor sign-in for everyone*. You must
+  have it on yourself first. People without it must set it up before they can use the app.
+- **Locked out as the platform owner:** `docker compose exec app python reset_admin.py admin` gives a
+  temporary password and switches off two-factor for that account.
+- Five wrong codes lock that account's code checks for ten minutes.
+
+## Tests
+
+API tests live in `backend/tests/`. Run them only against a throwaway database, never real data:
+
+```bash
+cd backend && PM_DATA_DIR=/tmp/trackly-test .venv/bin/uvicorn app.main:app --port 8791
+```
+
+```bash
+cd backend && BASE=http://127.0.0.1:8791 PW='Admin@123' .venv/bin/python tests/api_two_factor.py
+```
