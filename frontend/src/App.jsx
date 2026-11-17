@@ -16,6 +16,7 @@ import Roadmap from './pages/Roadmap'
 import Calendar from './pages/Calendar'
 import Chat from './pages/Chat'
 import Timesheet from './pages/Timesheet'
+import { GatedPage } from './components/License'
 import { Portfolio, RecycleBin, Workload } from './pages/Insights'
 import Users from './pages/Users'
 import Profile from './pages/Profile'
@@ -75,9 +76,9 @@ export default function App() {
           <Route path="roadmap" element={<Roadmap />} />
           <Route path="calendar" element={<Calendar />} />
           <Route path="chat" element={<Chat />} />
-          <Route path="timesheet" element={<Timesheet />} />
+          <Route path="timesheet" element={<GatedPage feature="time_tracking"><Timesheet /></GatedPage>} />
           <Route path="workload" element={<Workload />} />
-          <Route path="portfolio" element={<Portfolio />} />
+          <Route path="portfolio" element={<GatedPage feature="portfolio"><Portfolio /></GatedPage>} />
           <Route path="trash" element={<RecycleBin />} />
           <Route path="profile" element={<Profile />} />
           <Route path="support" element={<Support />} />

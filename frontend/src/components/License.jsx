@@ -16,6 +16,26 @@ export const FEATURE_LABELS = {
   group_chat: 'Group chats',
   audit_log: 'Audit log',
   security: 'Security controls (allowed networks)',
+  approvals_advanced: 'Strict sign-off, checklists, reminders and escalation',
+  time_tracking: 'Time tracking and timesheets',
+  tests: 'Test management',
+  client_portal: 'Client portal (share links and client feedback)',
+  portfolio: 'Portfolio',
+}
+
+/* Which add-on unlocks a feature when the plan does not include it. Mirrors DEFAULT_ADDONS in saas.py. */
+export const ADDON_FOR = {
+  approvals: 'Approvals Pro',
+  approvals_advanced: 'Approvals Pro',
+  client_portal: 'Client portal',
+  time_tracking: 'Time and budgets',
+  budgets: 'Time and budgets',
+  tests: 'Test management',
+  automation: 'Automation',
+  workload: 'Resource planning',
+  portfolio: 'Resource planning',
+  security: 'Advanced security',
+  audit_log: 'Advanced security',
 }
 
 export const LICENSE_STATUS = {
@@ -75,11 +95,11 @@ export function UpgradeNotice({ feature, compact = false }) {
         <div style={{ fontWeight: 650 }}>{FEATURE_LABELS[feature]} is not part of your plan</div>
         <div className="muted small">
           {isAdmin
-            ? `Your workspace is on ${user.org?.plan?.name || 'a plan'} that does not include it.`
-            : 'Ask a workspace administrator to upgrade the plan.'}
+            ? `Add the ${ADDON_FOR[feature] || 'matching'} add-on to ${user.org?.plan?.name || 'your plan'}, or move to a larger plan.`
+            : `Ask a workspace administrator to add ${ADDON_FOR[feature] ? `the ${ADDON_FOR[feature]} add-on` : 'it'} on the Billing page.`}
         </div>
       </div>
-      {isAdmin && <Link className="btn btn-primary btn-sm" to="/billing">See plans</Link>}
+      {isAdmin && <Link className="btn btn-primary btn-sm" to="/billing#addons">See add-ons</Link>}
     </div>
   )
 }
@@ -87,6 +107,11 @@ export function UpgradeNotice({ feature, compact = false }) {
 /** Renders its children only when the plan includes the feature. */
 export function PlanGate({ feature, children, compact }) {
   return useFeature(feature) ? children : <UpgradeNotice feature={feature} compact={compact} />
+}
+
+/** A whole page that needs a feature: the page itself, or an upgrade notice in its place. */
+export function GatedPage({ feature, children }) {
+  return useFeature(feature) ? children : <div className="page"><UpgradeNotice feature={feature} /></div>
 }
 
 /** Strip under the top bar: trial countdown, expiry warning, read-only notice. */
@@ -152,6 +177,7 @@ export function PlanFeatures({ plan }) {
         return (
           <li key={key} className={included ? '' : 'off'}>
             {included ? <Check size={14} /> : <Minus size={14} />} {label}
+            {!included && ADDON_FOR[key] && <span className="addon-tag">add-on</span>}
           </li>
         )
       })}
@@ -205,6 +231,7 @@ export function InvoiceModal({ invoiceId, onClose }) {
                 <tr>
                   <td>
                     <b>{invoice.plan_name}</b> license, {invoice.period}
+                    {invoice.addon_names?.length > 0 && <div className="small">With {invoice.addon_names.join(', ')}</div>}
                     <div className="muted small">{formatDate(invoice.period_start, true)} to {formatDate(invoice.period_end, true)}</div>
                   </td>
                   <td>{invoice.seats}</td>

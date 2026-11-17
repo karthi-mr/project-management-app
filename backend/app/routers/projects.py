@@ -278,6 +278,10 @@ def create_project(
         raise HTTPException(422, "Due date cannot be before the start date")
 
     check_project_available(db, get_org(db, user))
+    if data.signoff_mode == "strict":
+        from ..saas import require_feature
+
+        require_feature(db, user, "approvals_advanced")
     project = Project(
         org_id=user.org_id,
         name=data.name.strip(),
@@ -345,6 +349,14 @@ def update_project(
         log_activity(db, project.id, user, f"moved the project to the {fields['phase']} phase")
     if fields.get("status") and fields["status"] != project.status:
         log_activity(db, project.id, user, f"changed project status to {fields['status'].replace('_', ' ')}")
+    # Strict request-and-approve, reminders and escalation come with Approvals Pro.
+    advanced = (fields.get("signoff_mode") == "strict" and signoff_module.mode(project) != "strict") or (
+        fields.get("signoff_required") and signoff_module.mode(project) == "off") or any(
+        name in fields for name in ("signoff_remind_days", "signoff_escalate_days"))
+    if advanced:
+        from ..saas import require_feature
+
+        require_feature(db, user, "approvals_advanced")
     # The mode and the older on/off flag always agree.
     if "signoff_mode" in fields:
         fields["signoff_required"] = fields["signoff_mode"] != "off"

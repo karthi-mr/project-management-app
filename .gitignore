@@ -23,3 +23,7 @@ venv/
 # Browser test output
 frontend/test-results/
 frontend/playwright-report/
+
+# Demo video: generated files
+demo/build/
+demo/output/

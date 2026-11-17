@@ -734,11 +734,31 @@ class Organization(Base):
     password_require_mixed_case: Mapped[bool] = mapped_column(Boolean, default=False)
     ip_allowlist: Mapped[str] = mapped_column(Text, default="")  # one address or CIDR range per line
     require_two_factor: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Add-ons this workspace has on top of its plan (keys, comma separated), and which of those were
+    # given free of charge (kept when the workspace buys a licence without them).
+    addons: Mapped[str] = mapped_column(Text, default="")
+    free_addons: Mapped[str] = mapped_column(Text, default="")
     # Optional parts of the app this workspace has switched off (comma separated keys, see saas.MODULES).
     hidden_modules: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     plan: Mapped[Plan | None] = relationship()
+
+
+class Addon(Base):
+    """An extra a workspace can buy on top of its plan. Prices are per user, like plans."""
+
+    __tablename__ = "addons"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(30), unique=True)
+    name: Mapped[str] = mapped_column(String(60))
+    description: Mapped[str] = mapped_column(String(300), default="")
+    price_monthly: Mapped[float] = mapped_column(Float, default=0)  # per user per month
+    price_yearly: Mapped[float] = mapped_column(Float, default=0)  # per user per year
+    features: Mapped[str] = mapped_column(Text, default="[]")  # JSON list of feature keys it unlocks
+    is_public: Mapped[bool] = mapped_column(Boolean, default=True)  # offered on the Billing page
+    sort: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class LicenseRequest(Base):
@@ -750,6 +770,7 @@ class LicenseRequest(Base):
     org_id: Mapped[int] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), index=True)
     plan_id: Mapped[int | None] = mapped_column(ForeignKey("plans.id", ondelete="SET NULL"), nullable=True)
     plan_name: Mapped[str] = mapped_column(String(60))
+    addons: Mapped[str] = mapped_column(Text, default="")  # add-on keys, comma separated
     seats: Mapped[int] = mapped_column(Integer)
     period: Mapped[str] = mapped_column(String(10))  # monthly | yearly
     amount: Mapped[float] = mapped_column(Float)
@@ -780,6 +801,7 @@ class Invoice(Base):
     org_name: Mapped[str] = mapped_column(String(120))
     request_id: Mapped[int | None] = mapped_column(ForeignKey("license_requests.id", ondelete="SET NULL"), nullable=True)
     plan_name: Mapped[str] = mapped_column(String(60))
+    addon_names: Mapped[str] = mapped_column(Text, default="")  # what was bought with the plan, for the invoice
     seats: Mapped[int] = mapped_column(Integer)
     period: Mapped[str] = mapped_column(String(10))
     amount: Mapped[float] = mapped_column(Float)

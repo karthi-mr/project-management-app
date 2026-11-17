@@ -15,6 +15,7 @@ const TABS = [
   { key: 'workspaces', label: 'Workspaces' },
   { key: 'requests', label: 'License requests' },
   { key: 'plans', label: 'Plans' },
+  { key: 'addons', label: 'Add-ons' },
   { key: 'coupons', label: 'Coupons' },
   { key: 'invoices', label: 'Invoices' },
   { key: 'analytics', label: 'Analytics' },
@@ -142,7 +143,43 @@ function NewWorkspaceModal({ onClose, onCreated }) {
   )
 }
 
-function WorkspaceModal({ orgId, plans, onClose, onChanged, onInvoice }) {
+/** Which add-ons a workspace has, and which of them it got free of charge. */
+function WorkspaceAddons({ org, addons, busy, onSave }) {
+  const [have, setHave] = useState(() => new Set(org.addons.map((a) => a.key)))
+  const [free, setFree] = useState(() => new Set(org.addons.filter((a) => a.free).map((a) => a.key)))
+  const flip = (set, setter, key) => {
+    const next = new Set(set)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    setter(next)
+  }
+  if (!addons?.length) return null
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      <div className="section-title">Add-ons</div>
+      <div className="table-wrap">
+        <table className="table">
+          <thead><tr><th>Add-on</th><th>Has it</th><th>Free of charge</th></tr></thead>
+          <tbody>
+            {addons.map((a) => (
+              <tr key={a.key}>
+                <td><b>{a.name}</b>{org.plan_features && a.features.every((f) => org.plan_features.includes(f)) && <span className="faint small"> · included in the plan</span>}</td>
+                <td><input type="checkbox" aria-label={`${a.name}: has it`} checked={have.has(a.key) || free.has(a.key)} onChange={() => flip(have, setHave, a.key)} /></td>
+                <td><input type="checkbox" aria-label={`${a.name}: free of charge`} checked={free.has(a.key)} onChange={() => flip(free, setFree, a.key)} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="row between row-wrap">
+        <span className="hint">Free add-ons stay when the workspace buys a licence without them; the others follow each licence.</span>
+        <button type="button" className="btn" disabled={busy} onClick={() => onSave([...new Set([...have, ...free])], [...free])}>Save add-ons</button>
+      </div>
+    </div>
+  )
+}
+
+function WorkspaceModal({ orgId, plans, addons, onClose, onChanged, onInvoice }) {
   const toast = useToast()
   const confirm = useConfirm()
   const [org, setOrg] = useState(null)
@@ -243,6 +280,7 @@ function WorkspaceModal({ orgId, plans, onClose, onChanged, onInvoice }) {
                 <input className="input" type="number" min="0" max="100" step="any" style={{ maxWidth: 140 }} value={form.discount} onChange={(e) => setForm({ ...form, discount: e.target.value })} />
               </Field>
               <Field label="Private notes" hint="Only you can see these."><textarea className="textarea" rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></Field>
+              <WorkspaceAddons key={org.addons.map((a) => a.key + a.free).join()} org={org} addons={addons} busy={busy} onSave={(list, freeList) => patch({ addons: list, free_addons: freeList }, 'Add-ons updated')} />
               <div className="row between row-wrap">
                 <span className="row" style={{ gap: 6 }}>
                   {org.suspended ? (
@@ -383,7 +421,7 @@ function DecisionModal({ request, approve, onClose, onDone }) {
           <div className="quote" style={{ alignItems: 'flex-start' }}>
             <span>
               <b>{request.org_name}</b>
-              <div className="muted small">{request.plan_name} · {seatsText(request.seats)} · {request.period}</div>
+              <div className="muted small">{request.plan_name}{request.addons?.length > 0 ? ` + ${request.addons.length} add-on${request.addons.length === 1 ? '' : 's'} (${request.addons.join(', ').replaceAll('_', ' ')})` : ''} · {seatsText(request.seats)} · {request.period}</div>
               <div className="muted small">Reference: {request.payment_reference || 'none given'}</div>
             </span>
             <b>{money(request.amount, request.currency)}</b>
@@ -437,7 +475,7 @@ function Requests({ onOpen, onChanged }) {
               <span className="grow" style={{ minWidth: 220 }}>
                 <div>
                   <button className="link-btn" onClick={() => onOpen(r.org_id)}>{r.org_name}</button>{' '}
-                  <span className="muted">wants</span> <b>{r.plan_name}</b> <span className="muted">· {seatsText(r.seats)} · {r.period}</span>
+                  <span className="muted">wants</span> <b>{r.plan_name}</b>{r.addons?.length > 0 && <span className="muted"> + {r.addons.join(', ').replaceAll('_', ' ')}</span>} <span className="muted">· {seatsText(r.seats)} · {r.period}</span>
                 </div>
                 <div className="small muted" style={{ marginTop: 2 }}>
                   Now on {r.current_plan || 'no plan'}{r.org_status ? ` (${r.org_status})` : ''} · asked {timeAgo(r.created_at)} by {r.requested_by}
@@ -561,8 +599,8 @@ function Plans({ plans, currency, reload }) {
             {plans.map((p) => (
               <tr key={p.id}>
                 <td><b>{p.name}</b> {!p.is_public && <Badge color="#94a3b8" dot={false}>{p.key === 'trial' ? 'Automatic' : 'Hidden'}</Badge>}<div className="faint small">{p.description}</div></td>
-                <td>{p.key === 'trial' ? 'Free' : money(p.price_monthly, currency)}</td>
-                <td>{p.key === 'trial' ? 'Free' : money(p.price_yearly, currency)}</td>
+                <td>{p.key === 'trial' || !p.price_monthly ? 'Free' : money(p.price_monthly, currency)}</td>
+                <td>{p.key === 'trial' || !p.price_yearly ? 'Free' : money(p.price_yearly, currency)}</td>
                 <td>{p.max_users ?? 'Unlimited'}</td>
                 <td>{p.max_projects ?? 'Unlimited'}</td>
                 <td className="small muted">{p.features.length === Object.keys(FEATURE_LABELS).length ? 'Everything' : `${p.features.length} of ${Object.keys(FEATURE_LABELS).length}`}</td>
@@ -579,6 +617,113 @@ function Plans({ plans, currency, reload }) {
         </table>
       </div>
       {editing && <PlanModal plan={editing === 'new' ? null : editing} currency={currency} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload() }} />}
+    </>
+  )
+}
+
+/* ───────────── Add-ons ───────────── */
+
+const EMPTY_ADDON = { name: '', description: '', price_monthly: 0, price_yearly: 0, features: [], is_public: true, sort: 10 }
+
+function AddonModal({ addon, currency, onClose, onSaved }) {
+  const toast = useToast()
+  const [form, setForm] = useState(addon || EMPTY_ADDON)
+  const [busy, setBusy] = useState(false)
+  const set = (key) => (e) => setForm({ ...form, [key]: e.target.value })
+  const toggle = (key) => setForm({ ...form, features: form.features.includes(key) ? form.features.filter((f) => f !== key) : [...form.features, key] })
+  const submit = async (e) => {
+    e.preventDefault()
+    if (!form.features.length) return toast('Choose at least one feature this add-on unlocks', 'error')
+    setBusy(true)
+    try {
+      const body = {
+        name: form.name, description: form.description, price_monthly: Number(form.price_monthly) || 0, price_yearly: Number(form.price_yearly) || 0,
+        features: form.features, is_public: form.is_public, sort: Number(form.sort) || 0,
+      }
+      await api(addon ? `/platform/addons/${addon.id}` : '/platform/addons', { method: addon ? 'PUT' : 'POST', body })
+      toast(addon ? 'Add-on updated' : 'Add-on created')
+      onSaved()
+    } catch (err) {
+      toast(err.message, 'error')
+      setBusy(false)
+    }
+  }
+  return (
+    <Modal title={addon ? `Edit ${addon.name}` : 'New add-on'} onClose={onClose}>
+      <form onSubmit={submit}>
+        <div className="modal-body stack">
+          <div className="form-grid">
+            <Field label="Name"><input className="input" value={form.name} onChange={set('name')} maxLength={60} required autoFocus /></Field>
+            <Field label="Order in the list"><input className="input" type="number" min="0" max="1000" value={form.sort} onChange={set('sort')} /></Field>
+          </div>
+          <Field label="Description"><input className="input" value={form.description} onChange={set('description')} maxLength={300} /></Field>
+          <div className="form-grid">
+            <Field label={`Price per user / month (${currency})`}><input className="input" type="number" min="0" step="any" value={form.price_monthly} onChange={set('price_monthly')} required /></Field>
+            <Field label={`Price per user / year (${currency})`}><input className="input" type="number" min="0" step="any" value={form.price_yearly} onChange={set('price_yearly')} required /></Field>
+          </div>
+          <Field label="Unlocks" as="div">
+            <div className="feature-checks">
+              {Object.entries(FEATURE_LABELS).map(([key, label]) => (
+                <label className="opt-row" key={key}><input type="checkbox" checked={form.features.includes(key)} onChange={() => toggle(key)} /> {label}</label>
+              ))}
+            </div>
+            <span className="hint">A workspace whose plan already includes all of these is never charged for the add-on.</span>
+          </Field>
+          <label className="opt-row"><input type="checkbox" checked={form.is_public} onChange={(e) => setForm({ ...form, is_public: e.target.checked })} /> On sale (shown on the Billing page)</label>
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" disabled={busy}>{busy ? <Spinner /> : 'Save add-on'}</button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+function Addons({ addons, currency, reload }) {
+  const toast = useToast()
+  const confirm = useConfirm()
+  const [editing, setEditing] = useState(null)
+  const remove = async (addon) => {
+    if (!(await confirm({ title: `Delete the ${addon.name} add-on?`, message: 'Workspaces cannot buy it any more.', confirmLabel: 'Delete add-on', danger: true }))) return
+    try {
+      await api(`/platform/addons/${addon.id}`, { method: 'DELETE' })
+      toast('Add-on deleted')
+      reload()
+    } catch (err) {
+      toast(err.message, 'error')
+    }
+  }
+  if (!addons) return <PageSkeleton variant="list" padded={false} />
+  return (
+    <>
+      <div className="toolbar">
+        <span className="muted small grow">Extras a workspace can buy on top of any plan, priced per user. Give one free from the workspace's own page.</span>
+        <button className="btn btn-primary" onClick={() => setEditing('new')}><Plus size={15} /> New add-on</button>
+      </div>
+      <div className="card table-wrap">
+        <table className="table">
+          <thead><tr><th>Add-on</th><th>Per user / month</th><th>Per user / year</th><th>Unlocks</th><th>Workspaces</th><th /></tr></thead>
+          <tbody>
+            {addons.map((a) => (
+              <tr key={a.id}>
+                <td><b>{a.name}</b> {!a.is_public && <Badge color="#94a3b8" dot={false}>Hidden</Badge>}<div className="faint small">{a.description}</div></td>
+                <td>{money(a.price_monthly, currency)}</td>
+                <td>{money(a.price_yearly, currency)}</td>
+                <td className="small muted">{a.features.map((f) => FEATURE_LABELS[f] || f).join(', ')}</td>
+                <td>{a.workspaces}</td>
+                <td>
+                  <span className="row" style={{ gap: 2, justifyContent: 'flex-end' }}>
+                    <button className="btn btn-ghost btn-sm btn-icon" title="Edit" aria-label={`Edit ${a.name}`} onClick={() => setEditing(a)}><Pencil size={14} /></button>
+                    <button className="btn btn-ghost btn-sm btn-icon danger-text" title="Delete" aria-label={`Delete ${a.name}`} onClick={() => remove(a)}><Trash2 size={14} /></button>
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {editing && <AddonModal addon={editing === 'new' ? null : editing} currency={currency} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload() }} />}
     </>
   )
 }
@@ -660,6 +805,7 @@ export default function Platform() {
   const [params, setParams] = useSearchParams()
   const tab = TABS.some((t) => t.key === params.get('tab')) ? params.get('tab') : 'overview'
   const [plans, setPlans] = useState(null)
+  const [addons, setAddons] = useState(null)
   const [currency, setCurrency] = useState('USD')
   const [pending, setPending] = useState(0)
   const [tickets, setTickets] = useState(0)
@@ -669,6 +815,7 @@ export default function Platform() {
 
   const reload = useCallback(() => {
     api('/platform/plans').then((r) => setPlans(r.plans)).catch(() => setPlans([]))
+    api('/platform/addons').then((r) => setAddons(r.addons)).catch(() => setAddons([]))
     api('/platform/overview').then((r) => { setPending(r.pending_requests); setCurrency(r.currency) }).catch(() => {})
     api('/platform/support?status=open').then((r) => setTickets(r.open)).catch(() => {})
     setVersion((v) => v + 1)
@@ -699,6 +846,7 @@ export default function Platform() {
       {tab === 'workspaces' && <Workspaces onOpen={setOpenOrg} version={version} onChanged={reload} />}
       {tab === 'requests' && <Requests onOpen={setOpenOrg} onChanged={reload} />}
       {tab === 'plans' && <Plans plans={plans} currency={currency} reload={reload} />}
+      {tab === 'addons' && <Addons addons={addons} currency={currency} reload={reload} />}
       {tab === 'invoices' && <Invoices key={version} onInvoice={setInvoiceId} />}
       {tab === 'settings' && <Settings />}
       {tab === 'coupons' && <Coupons currency={currency} />}
@@ -707,7 +855,7 @@ export default function Platform() {
       {tab === 'announcements' && <Announcements />}
       {tab === 'status' && <StatusAdmin />}
 
-      {openOrg && plans && <WorkspaceModal orgId={openOrg} plans={plans} onClose={() => setOpenOrg(null)} onChanged={reload} onInvoice={setInvoiceId} />}
+      {openOrg && plans && <WorkspaceModal orgId={openOrg} plans={plans} addons={addons} onClose={() => setOpenOrg(null)} onChanged={reload} onInvoice={setInvoiceId} />}
       {invoiceId && <InvoiceModal invoiceId={invoiceId} onClose={() => setInvoiceId(null)} />}
     </div>
   )

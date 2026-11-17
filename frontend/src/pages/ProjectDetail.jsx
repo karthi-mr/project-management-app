@@ -265,8 +265,8 @@ export default function ProjectDetail() {
       )}
       {tab === 'risks' && <Risks project={project} risks={risks} />}
       {tab === 'sprints' && <PlanGate feature="sprints"><Sprints project={project} /></PlanGate>}
-      {tab === 'approvals' && <><PlanGate feature="approvals"><Approvals project={project} /></PlanGate>{user?.org?.modules?.client_access !== false && <div style={{ marginTop: 16 }}><ClientFeedbackCard project={project} /></div>}</>}
-      {tab === 'tests' && <Tests project={project} features={features} />}
+      {tab === 'approvals' && <><PlanGate feature="approvals"><Approvals project={project} /></PlanGate>{user?.org?.modules?.client_access !== false && user?.org?.features?.includes('client_portal') && <div style={{ marginTop: 16 }}><ClientFeedbackCard project={project} /></div>}</>}
+      {tab === 'tests' && <PlanGate feature="tests"><Tests project={project} features={features} /></PlanGate>}
       {tab === 'docs' && <Documents key={project.id} project={project} />}
       {tab === 'reports' && <Reports project={project} issues={issues} features={features} milestones={milestones} risks={risks} />}
       {tab === 'milestones' && <Milestones project={project} milestones={milestones} reload={load} />}

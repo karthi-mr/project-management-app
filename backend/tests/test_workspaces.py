@@ -14,7 +14,8 @@ def register(anon, **overrides):
 
 def test_public_plans_hide_the_trial(anon):
     data = ok(anon.get("/api/public/plans"))
-    assert [p["key"] for p in data["plans"]] == ["starter", "business", "enterprise"]
+    assert [p["key"] for p in data["plans"]] == ["free", "starter", "professional", "business", "enterprise"]
+    assert [a["key"] for a in data["addons"]][:2] == ["approvals_pro", "client_portal"]
     assert data["settings"]["allow_signup"] is True
 
 
@@ -133,14 +134,18 @@ def test_features_follow_the_plan(workspace, owner, plans):
     project = ws.project()
     person = ws.add_person()
     activate(owner, ws, "starter", plans)
-    assert ok(ws.admin.api.get("/api/auth/me"))["org"]["features"] == ["sprints", "customization"]
+    assert ok(ws.admin.api.get("/api/auth/me"))["org"]["features"] == ["sprints", "customization", "group_chat"]
     fails(ws.admin.api.post(f"/api/projects/{project['id']}/automations", {"name": "x", "trigger": "issue_created", "config": {"action": {"type": "set_priority", "value": "high"}}}), 402)
-    fails(ws.admin.api.post("/api/chat/groups", {"name": "Team", "member_ids": [person.id]}), 402)
     fails(ws.admin.api.get("/api/admin/audit"), 402)
     fails(ws.admin.api.get("/api/workload"), 402)
+    fails(ws.admin.api.get(f"/api/projects/{project['id']}/tests"), 402)
+    fails(ws.admin.api.get(f"/api/projects/{project['id']}/share-links"), 402)
+    fails(ws.admin.api.get("/api/timesheet?start=2026-01-01&end=2026-01-31"), 402)
     ok(ws.admin.api.post(f"/api/projects/{project['id']}/sprints", {"name": "Sprint 1"}), 201)
-    activate(owner, ws, "business", plans)
     ok(ws.admin.api.post("/api/chat/groups", {"name": "Team", "member_ids": [person.id]}), 201)
+    activate(owner, ws, "business", plans)
+    ok(ws.admin.api.get(f"/api/projects/{project['id']}/share-links"))
+    fails(ws.admin.api.get(f"/api/projects/{project['id']}/tests"), 402)  # test management is an add-on
 
 
 def test_expired_and_suspended_workspaces_are_read_only(workspace, owner, plans):

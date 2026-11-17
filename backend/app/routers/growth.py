@@ -29,7 +29,7 @@ from ..models import (
     User,
     utcnow,
 )
-from ..saas import get_org, get_settings, license_status, purge_organization
+from ..saas import get_org, get_settings, has_feature, license_status, purge_organization, require_feature
 from ..security import get_current_user, require_admin, require_platform_admin, verify_password
 from ..serializers import dt, user_brief
 from .projects import get_project
@@ -86,6 +86,7 @@ def share_out(link: ShareLink) -> dict:
 @router.get("/projects/{project_id}/share-links")
 def list_share_links(project_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     get_project(db, project_id, user, manage=True, write=False)
+    require_feature(db, user, "client_portal")
     rows = db.scalars(select(ShareLink).where(ShareLink.project_id == project_id, ShareLink.revoked.is_(False)).order_by(ShareLink.id.desc())).all()
     return [share_out(r) for r in rows]
 
@@ -93,6 +94,7 @@ def list_share_links(project_id: int, user: User = Depends(get_current_user), db
 @router.post("/projects/{project_id}/share-links", status_code=201)
 def create_share_link(project_id: int, data: ShareIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     project = get_project(db, project_id, user, manage=True)
+    require_feature(db, user, "client_portal")
     if not data.sections:
         raise HTTPException(422, "Choose at least one thing to share")
     link = ShareLink(
@@ -127,7 +129,7 @@ def shared_project(token: str, db: Session = Depends(get_db)):
         raise HTTPException(404, "This link is not valid any more")
     project = link.project
     org = db.get(Organization, project.org_id)
-    if org is None or org.suspended:
+    if org is None or org.suspended or not has_feature(db, org.id, "client_portal"):
         raise HTTPException(404, "This link is not valid any more")
     link.views = (link.views or 0) + 1
     link.last_viewed_at = utcnow()

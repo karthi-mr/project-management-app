@@ -16,6 +16,10 @@ from ..database import get_db
 from ..models import Invoice, LicenseRequest, Notification, Organization, Plan, User, utcnow
 from ..saas import (
     FEATURES,
+    addon_out,
+    all_addons,
+    new_license_key,
+    split_keys,
     create_organization,
     get_org,
     get_settings,
@@ -57,6 +61,7 @@ def request_out(r: LicenseRequest) -> dict:
         "org_name": r.organization.name if r.organization else None,
         "plan_id": r.plan_id,
         "plan_name": r.plan_name,
+        "addons": split_keys(r.addons),
         "seats": r.seats,
         "period": r.period,
         "amount": r.amount,
@@ -82,6 +87,7 @@ def invoice_out(i: Invoice) -> dict:
         "org_id": i.org_id,
         "org_name": i.org_name,
         "plan_name": i.plan_name,
+        "addon_names": [n for n in (i.addon_names or "").split(", ") if n],
         "seats": i.seats,
         "period": i.period,
         "amount": i.amount,
@@ -101,7 +107,8 @@ def invoice_out(i: Invoice) -> dict:
 @router.get("/public/plans")
 def public_plans(db: Session = Depends(get_db)):
     plans = db.scalars(select(Plan).where(Plan.is_public).order_by(Plan.sort, Plan.id)).all()
-    return {"plans": [plan_out(p) for p in plans], "features": FEATURES, "settings": public_settings(db)}
+    return {"plans": [plan_out(p) for p in plans], "addons": [addon_out(a) for a in all_addons(db, public_only=True)],
+            "features": FEATURES, "settings": public_settings(db)}
 
 
 class RegisterIn(BaseModel):
@@ -180,6 +187,7 @@ class LicenseRequestIn(BaseModel):
     payment_reference: str = Field(default="", max_length=200)
     note: str = Field(default="", max_length=2000)
     coupon_code: str = Field(default="", max_length=40)
+    addons: list[str] = Field(default=[], max_length=50)
 
 
 class QuoteIn(BaseModel):
@@ -187,6 +195,7 @@ class QuoteIn(BaseModel):
     seats: int = Field(ge=1, le=100000)
     period: Literal["monthly", "yearly"]
     coupon_code: str = Field(default="", max_length=40)
+    addons: list[str] = Field(default=[], max_length=50)
 
 
 @router.post("/billing/quote")
@@ -195,7 +204,7 @@ def price(data: QuoteIn, admin: User = Depends(require_admin), db: Session = Dep
     plan = db.get(Plan, data.plan_id)
     if not plan or not plan.is_public:
         raise HTTPException(404, "That plan is not available")
-    return price_quote(db, get_org(db, admin), plan, data.seats, data.period, data.coupon_code)
+    return price_quote(db, get_org(db, admin), plan, data.seats, data.period, data.coupon_code, data.addons)
 
 
 @router.get("/billing")
@@ -210,6 +219,7 @@ def billing(admin: User = Depends(require_admin), db: Session = Depends(get_db))
     return {
         "org": {**org_out(db, org), "discount_percent": org.discount_percent or 0},
         "plans": [plan_out(p) for p in plans],
+        "addons": [addon_out(a) for a in all_addons(db, public_only=True)],
         "features": FEATURES,
         "settings": {**public_settings(db), "payment_instructions": settings["payment_instructions"]},
         "requests": [request_out(r) for r in requests],
@@ -265,9 +275,10 @@ def request_license(data: LicenseRequestIn, request: Request, admin: User = Depe
         raise HTTPException(409, "You already have a request waiting. Cancel it before sending another.")
 
     settings = get_settings(db)
-    price = price_quote(db, org, plan, data.seats, data.period, data.coupon_code)
+    price = price_quote(db, org, plan, data.seats, data.period, data.coupon_code, data.addons)
     req = LicenseRequest(
-        org_id=org.id, plan_id=plan.id, plan_name=plan.name, seats=data.seats, period=data.period,
+        org_id=org.id, plan_id=plan.id, plan_name=plan.name, addons=",".join(price["addons"]),
+        seats=data.seats, period=data.period,
         amount=price["amount"], currency=settings["currency"],
         list_amount=price["list_amount"] if price["discount"] else None,
         coupon_code=price["coupon_code"], discount_note=price["discount_note"],
@@ -275,9 +286,27 @@ def request_license(data: LicenseRequestIn, request: Request, admin: User = Depe
         requested_by_id=admin.id, requested_by_name=admin.full_name,
     )
     db.add(req)
+    if price["list_amount"] == 0:
+        # Nothing to pay (the Free plan): it starts straight away, no one needs to approve it.
+        org.plan_id = plan.id
+        org.seats = data.seats
+        org.is_trial = False
+        org.valid_until = None
+        org.addons = org.free_addons or ""
+        if not org.license_key:
+            org.license_key = new_license_key()
+        req.status = "approved"
+        req.decided_at = utcnow()
+        req.decided_by_name = "Automatic (free plan)"
+        db.info.pop("org_cache", None)
+        db.info.pop("feature_cache", None)
+        audit(db, admin, "license.free_plan", f"{plan.name}, {data.seats} seats", request)
+        db.commit()
+        return request_out(req)
     owners = db.scalars(select(User).where(User.is_platform_admin.is_(True), User.is_active).execution_options(all_orgs=True)).all()
     for owner in owners:
-        db.add(Notification(user_id=owner.id, message=f"{org.name} requested {plan.name} for {data.seats} users ({data.period})"))
+        extras = f" with {len(price['addons'])} add-on{'s' if len(price['addons']) != 1 else ''}" if price["addons"] else ""
+        db.add(Notification(user_id=owner.id, message=f"{org.name} requested {plan.name}{extras} for {data.seats} users ({data.period})"))
         db.info.setdefault("notify_users", set()).add(owner.id)
     audit(db, admin, "license.requested", f"{plan.name}, {data.seats} seats, {data.period}", request)
     db.commit()

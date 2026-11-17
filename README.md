@@ -535,3 +535,30 @@ accounts, each with its own password and two-factor setup.
   a button that copies a sign-in link with the ID filled in. It is also shown when someone is added or
   their password is reset, after sign-up, and to the platform owner, who can search workspaces by ID.
 - **Upgrading** gives every existing workspace an ID automatically; nobody's password changes.
+
+## Plans and add-ons
+
+Prices are per user, in the currency set in the owner console (Owner console → Settings). Yearly is
+ten times the monthly price.
+
+| Plan | Per user / month | Users | Projects | Adds |
+| --- | --- | --- | --- | --- |
+| Free trial | — | 5 | 3 | everything, for 14 days |
+| Free | 0 | 3 | 2 | the core app; starts at once, no approval needed |
+| Starter | 6 | 10 | 10 | sprints, custom workflows, group chat |
+| Professional | 9 | 25 | unlimited | simple stage sign-off, time tracking, workload |
+| Business | 12 | 100 | unlimited | strict sign-off, budgets, automation, portfolio, client portal |
+| Enterprise | 20 | unlimited | unlimited | everything, including test management and advanced security |
+
+**Add-ons** are extras bought on top of any plan, in the same licence request, per user:
+Approvals Pro (2), Client portal (2), Time and budgets (3), Test management (2), Automation (2),
+Resource planning (2) and Advanced security (3). An add-on the plan already includes is never charged.
+
+- **Customers** pick add-ons on the Billing page (an *Add* button on each, or in the request form).
+  Anything their plan lacks shows an upgrade notice naming the add-on that unlocks it.
+- **The platform owner** edits the add-on catalogue (Owner console → Add-ons), sees add-ons on each
+  request and invoice, and can give a workspace any add-on free of charge from its page. Free add-ons
+  stay when the workspace buys a licence without them; bought ones follow each licence.
+- **Upgrading** an existing installation changes the built-in plans only if you never edited them, and
+  workspaces that already existed keep, free of charge, the add-ons for features every workspace used to
+  have (client portal, time tracking, test management, portfolio).

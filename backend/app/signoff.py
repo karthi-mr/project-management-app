@@ -201,6 +201,8 @@ def run_reminders(db: Session) -> int:
         project = approval.project
         if project is None or project.deleted_at is not None:
             continue
+        if not has_feature(db, project.org_id, "approvals_advanced"):
+            continue  # reminders and escalation come with Approvals Pro
         days = (now - approval.created_at).days
         people = [approvers_ for approvers_ in approvers(db, project)]
         if approval.approver_id:

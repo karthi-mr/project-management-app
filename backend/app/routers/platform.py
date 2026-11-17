@@ -16,10 +16,13 @@ from sqlalchemy.orm import Session
 
 from ..audit import audit
 from ..database import get_db
-from ..models import AuditLog, Invoice, LicenseRequest, Notification, Organization, Plan, Project, User, utcnow
+from ..models import Addon, AuditLog, Invoice, LicenseRequest, Notification, Organization, Plan, Project, User, utcnow
 from ..saas import (
     DEFAULT_SETTINGS,
     FEATURES,
+    addon_out,
+    all_addons,
+    split_keys,
     create_organization,
     get_settings,
     license_status,
@@ -119,6 +122,8 @@ class OrgUpdate(BaseModel):
     notes: str | None = Field(default=None, max_length=5000)
     billing_email: str | None = Field(default=None, max_length=255)
     discount_percent: float | None = Field(default=None, ge=0, le=100)
+    addons: list[str] | None = Field(default=None, max_length=50)  # every add-on the workspace has
+    free_addons: list[str] | None = Field(default=None, max_length=50)  # of those, the ones given free
 
 
 @router.get("/organizations")
@@ -212,6 +217,20 @@ def update_organization(org_id: int, data: OrgUpdate, request: Request, owner: U
     if fields.get("discount_percent") is not None and fields["discount_percent"] != (org.discount_percent or 0):
         org.discount_percent = fields["discount_percent"]
         changes.append(f"discount → {org.discount_percent:g}%")
+    if fields.get("addons") is not None or fields.get("free_addons") is not None:
+        known = {a.key: a.name for a in all_addons(db)}
+        have = fields["addons"] if fields.get("addons") is not None else split_keys(org.addons)
+        free = fields["free_addons"] if fields.get("free_addons") is not None else split_keys(org.free_addons)
+        unknown = [k for k in list(have) + list(free) if k not in known]
+        if unknown:
+            raise HTTPException(422, f"Unknown add-on: {unknown[0]}")
+        have = sorted(set(have) | set(free))  # an add-on given free is an add-on the workspace has
+        if have != split_keys(org.addons):
+            names = ", ".join(known[k] for k in have) or "none"
+            changes.append(f"add-ons → {names}")
+        org.addons = ",".join(have)
+        org.free_addons = ",".join(sorted(set(free)))
+        db.info.pop("feature_cache", None)
     if fields.get("notes") is not None:
         org.notes = fields["notes"]
     if fields.get("billing_email") is not None:
@@ -307,6 +326,10 @@ def approve_request(request_id: int, data: DecisionIn, request: Request, owner: 
     org.seats = req.seats
     org.is_trial = False
     org.valid_until = end
+    # The licence decides the add-ons: the ones bought now, plus any given free of charge.
+    org.addons = ",".join(sorted(set(split_keys(req.addons)) | set(split_keys(org.free_addons))))
+    names = {a.key: a.name for a in all_addons(db)}
+    bought = [names.get(k, k) for k in split_keys(req.addons)]
     if not org.license_key:
         org.license_key = new_license_key()
 
@@ -321,7 +344,7 @@ def approve_request(request_id: int, data: DecisionIn, request: Request, owner: 
             with db.begin_nested():
                 invoice = Invoice(
                     number=_next_invoice_number(db), org_id=org.id, org_name=org.name, request_id=req.id,
-                    plan_name=plan.name, seats=req.seats, period=req.period, amount=req.amount, currency=req.currency,
+                    plan_name=plan.name, addon_names=", ".join(bought), seats=req.seats, period=req.period, amount=req.amount, currency=req.currency,
                     period_start=start, period_end=end, payment_reference=req.payment_reference,
                     list_amount=req.list_amount, discount_note=req.discount_note,
                 )
@@ -435,6 +458,83 @@ def delete_plan(plan_id: int, request: Request, owner: User = Depends(require_pl
         raise HTTPException(400, "Workspaces are using this plan. Move them to another plan, or hide it instead.")
     audit(db, owner, "platform.plan_deleted", plan.name, request)
     db.delete(plan)
+    db.commit()
+
+
+# ───────────── Add-ons ─────────────
+
+
+class AddonIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    description: str = Field(default="", max_length=300)
+    price_monthly: float = Field(ge=0, le=1e7)
+    price_yearly: float = Field(ge=0, le=1e8)
+    features: list[str] = Field(min_length=1)
+    is_public: bool = True
+    sort: int = Field(default=0, ge=0, le=1000)
+
+
+def _apply_addon(addon: Addon, data: AddonIn) -> None:
+    unknown = [f for f in data.features if f not in FEATURES]
+    if unknown:
+        raise HTTPException(422, f"Unknown feature: {unknown[0]}")
+    addon.name = data.name.strip()
+    addon.description = data.description.strip()
+    addon.price_monthly = data.price_monthly
+    addon.price_yearly = data.price_yearly
+    addon.features = json.dumps([f for f in FEATURES if f in data.features])
+    addon.is_public = data.is_public
+    addon.sort = data.sort
+
+
+def _addon_usage(db: Session) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in db.scalars(select(Organization.addons)):
+        for key in split_keys(value):
+            counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+@router.get("/addons")
+def list_addons(_: User = Depends(require_platform_admin), db: Session = Depends(get_db)):
+    used = _addon_usage(db)
+    return {"addons": [{**addon_out(a), "workspaces": used.get(a.key, 0)} for a in all_addons(db)], "features": FEATURES}
+
+
+@router.post("/addons", status_code=201)
+def create_addon(data: AddonIn, request: Request, owner: User = Depends(require_platform_admin), db: Session = Depends(get_db)):
+    base = re.sub(r"[^a-z0-9]+", "_", data.name.lower()).strip("_")[:24] or "addon"
+    key, n = base, 2
+    while db.scalar(select(Addon.id).where(Addon.key == key)):
+        key, n = f"{base}_{n}", n + 1
+    addon = Addon(key=key, name=data.name)
+    _apply_addon(addon, data)
+    db.add(addon)
+    audit(db, owner, "platform.addon_created", addon.name, request)
+    db.commit()
+    return addon_out(addon)
+
+
+@router.put("/addons/{addon_id}")
+def update_addon(addon_id: int, data: AddonIn, request: Request, owner: User = Depends(require_platform_admin), db: Session = Depends(get_db)):
+    addon = db.get(Addon, addon_id)
+    if not addon:
+        raise HTTPException(404, "Add-on not found")
+    _apply_addon(addon, data)
+    audit(db, owner, "platform.addon_updated", addon.name, request)
+    db.commit()
+    return addon_out(addon)
+
+
+@router.delete("/addons/{addon_id}", status_code=204)
+def delete_addon(addon_id: int, request: Request, owner: User = Depends(require_platform_admin), db: Session = Depends(get_db)):
+    addon = db.get(Addon, addon_id)
+    if not addon:
+        raise HTTPException(404, "Add-on not found")
+    if _addon_usage(db).get(addon.key):
+        raise HTTPException(400, "Workspaces have this add-on. Take it off them first, or hide it instead.")
+    audit(db, owner, "platform.addon_deleted", addon.name, request)
+    db.delete(addon)
     db.commit()
 
 

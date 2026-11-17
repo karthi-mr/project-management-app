@@ -34,32 +34,85 @@ FEATURES = {
     "group_chat": "Group chats",
     "audit_log": "Audit log",
     "security": "Security controls (allowed networks)",
+    "approvals_advanced": "Strict sign-off, sign-off checklists, reminders and escalation",
+    "time_tracking": "Time tracking and timesheets",
+    "tests": "Test management",
+    "client_portal": "Client portal (share links and client feedback)",
+    "portfolio": "Portfolio",
 }
 ALL_FEATURES = list(FEATURES)
+# Features that every workspace used to have before they could be bought as add-ons. Workspaces that
+# existed then keep them free of charge (see _grandfather_addons).
+FORMERLY_FREE = ("time_tracking", "tests", "client_portal", "portfolio")
 
+CORE = "Projects, features with sign-off, milestones, issues, board, roadmap, calendar, docs, risks and chat"
 DEFAULT_PLANS = [
     {
         "key": "trial", "name": "Free trial", "sort": 0, "is_public": False,
-        "description": "Every feature, to try Trackly with your team.",
+        "description": "Every feature and add-on, to try Trackly with your team.",
         "price_monthly": 0, "price_yearly": 0, "max_users": 5, "max_projects": 3, "features": ALL_FEATURES,
     },
     {
-        "key": "starter", "name": "Starter", "sort": 1, "is_public": True,
-        "description": "Projects, issues, planning and chat for a small team.",
+        "key": "free", "name": "Free", "sort": 1, "is_public": True,
+        "description": "For a very small team getting started. Free for ever.",
+        "price_monthly": 0, "price_yearly": 0, "max_users": 3, "max_projects": 2, "features": [],
+    },
+    {
+        "key": "starter", "name": "Starter", "sort": 2, "is_public": True,
+        "description": "Sprints, custom workflows and group chat for a small team.",
         "price_monthly": 6, "price_yearly": 60, "max_users": 10, "max_projects": 10,
-        "features": ["sprints", "customization"],
+        "features": ["sprints", "customization", "group_chat"],
     },
     {
-        "key": "business", "name": "Business", "sort": 2, "is_public": True,
-        "description": "Automation, approvals, workload and budgets for growing teams.",
-        "price_monthly": 12, "price_yearly": 120, "max_users": 50, "max_projects": None,
-        "features": ["sprints", "customization", "automation", "approvals", "workload", "budgets", "group_chat"],
+        "key": "professional", "name": "Professional", "sort": 3, "is_public": True,
+        "description": "Stage sign-off, time tracking and workload for growing teams.",
+        "price_monthly": 9, "price_yearly": 90, "max_users": 25, "max_projects": None,
+        "features": ["sprints", "customization", "group_chat", "approvals", "time_tracking", "workload"],
     },
     {
-        "key": "enterprise", "name": "Enterprise", "sort": 3, "is_public": True,
-        "description": "Everything, with unlimited users and the audit log.",
+        "key": "business", "name": "Business", "sort": 4, "is_public": True,
+        "description": "Strict sign-off, budgets, automation, portfolio and the client portal.",
+        "price_monthly": 12, "price_yearly": 120, "max_users": 100, "max_projects": None,
+        "features": ["sprints", "customization", "group_chat", "approvals", "time_tracking", "workload",
+                     "approvals_advanced", "budgets", "automation", "portfolio", "client_portal"],
+    },
+    {
+        "key": "enterprise", "name": "Enterprise", "sort": 5, "is_public": True,
+        "description": "Everything, including test management and advanced security, for unlimited users.",
         "price_monthly": 20, "price_yearly": 200, "max_users": None, "max_projects": None, "features": ALL_FEATURES,
     },
+]
+# The plans as first shipped. A plan still exactly like this was never edited by the platform
+# owner, so it can safely be replaced by the current version (see _upgrade_plans).
+ORIGINAL_PLANS = {
+    "starter": {"price_monthly": 6, "price_yearly": 60, "max_users": 10, "max_projects": 10, "features": ["sprints", "customization"]},
+    "business": {"price_monthly": 12, "price_yearly": 120, "max_users": 50, "max_projects": None,
+                 "features": ["sprints", "customization", "automation", "approvals", "workload", "budgets", "group_chat"]},
+}
+
+# Extras a workspace can buy on top of any plan, priced per user like plans.
+DEFAULT_ADDONS = [
+    {"key": "approvals_pro", "name": "Approvals Pro", "sort": 1, "price_monthly": 2, "price_yearly": 20,
+     "description": "Strict request-and-approve sign-off, sign-off checklists, reminders and escalation.",
+     "features": ["approvals", "approvals_advanced"]},
+    {"key": "client_portal", "name": "Client portal", "sort": 2, "price_monthly": 2, "price_yearly": 20,
+     "description": "Read-only progress links for clients, with client comments and approvals.",
+     "features": ["client_portal"]},
+    {"key": "time_budgets", "name": "Time and budgets", "sort": 3, "price_monthly": 3, "price_yearly": 30,
+     "description": "Time tracking, timesheets, project budgets and costs from logged hours.",
+     "features": ["time_tracking", "budgets"]},
+    {"key": "test_management", "name": "Test management", "sort": 4, "price_monthly": 2, "price_yearly": 20,
+     "description": "Test cases and test runs per feature; a failed test raises a bug.",
+     "features": ["tests"]},
+    {"key": "automation", "name": "Automation", "sort": 5, "price_monthly": 2, "price_yearly": 20,
+     "description": "Rules that assign, label and move issues for you.",
+     "features": ["automation"]},
+    {"key": "resource_planning", "name": "Resource planning", "sort": 6, "price_monthly": 2, "price_yearly": 20,
+     "description": "Workload per person and every project side by side in a portfolio.",
+     "features": ["workload", "portfolio"]},
+    {"key": "advanced_security", "name": "Advanced security", "sort": 7, "price_monthly": 3, "price_yearly": 30,
+     "description": "Allowed networks (IP allowlist) and the full audit log.",
+     "features": ["security", "audit_log"]},
 ]
 
 DEFAULT_SETTINGS = {
@@ -145,6 +198,54 @@ def plan_features(plan: Plan | None) -> list[str]:
         return []
 
 
+def addon_features(addon) -> list[str]:
+    try:
+        return [f for f in json.loads(addon.features or "[]") if f in FEATURES]
+    except ValueError:
+        return []
+
+
+def addon_out(addon) -> dict:
+    return {
+        "id": addon.id,
+        "key": addon.key,
+        "name": addon.name,
+        "description": addon.description,
+        "price_monthly": addon.price_monthly,
+        "price_yearly": addon.price_yearly,
+        "features": addon_features(addon),
+        "is_public": addon.is_public,
+        "sort": addon.sort,
+    }
+
+
+def split_keys(value: str | None) -> list[str]:
+    return [k for k in (value or "").split(",") if k]
+
+
+def all_addons(db: Session, public_only: bool = False) -> list:
+    from .models import Addon
+
+    query = select(Addon).order_by(Addon.sort, Addon.id)
+    if public_only:
+        query = query.where(Addon.is_public)
+    return db.scalars(query).all()
+
+
+def org_addons(db: Session, org: Organization) -> list:
+    """The add-ons this workspace has, in catalogue order."""
+    keys = set(split_keys(org.addons))
+    return [a for a in all_addons(db) if a.key in keys] if keys else []
+
+
+def effective_features(db: Session, org: Organization) -> list[str]:
+    """What the workspace can use: its plan, plus its add-ons."""
+    have = set(plan_features(org.plan))
+    for addon in org_addons(db, org):
+        have |= set(addon_features(addon))
+    return [f for f in FEATURES if f in have]
+
+
 def plan_out(plan: Plan) -> dict:
     return {
         "id": plan.id,
@@ -201,7 +302,9 @@ def org_out(db: Session, org: Organization, private: bool = False) -> dict:
         "status": status,
         "is_trial": org.is_trial,
         "plan": plan_out(org.plan) if org.plan else None,
-        "features": plan_features(org.plan),
+        "features": effective_features(db, org),
+        "plan_features": plan_features(org.plan),
+        "addons": [addon_out(a) | {"free": a.key in split_keys(org.free_addons)} for a in org_addons(db, org)],
         "seats": seat_limit(org),
         "max_projects": org.plan.max_projects if org.plan else None,
         "valid_until": org.valid_until.isoformat(timespec="seconds") + "Z" if org.valid_until else None,
@@ -241,7 +344,7 @@ def has_feature(db: Session, org_id: int | None, feature: str) -> bool:
     cache = db.info.setdefault("feature_cache", {})
     if org_id not in cache:
         org = db.get(Organization, org_id)
-        cache[org_id] = set(plan_features(org.plan)) if org else set()
+        cache[org_id] = set(effective_features(db, org)) if org else set()
     return feature in cache[org_id]
 
 
@@ -281,16 +384,33 @@ def period_days(period: str) -> int:
     return 365 if period == "yearly" else 30
 
 
-def quote(plan: Plan, seats: int, period: str) -> float:
+def quote(plan: Plan, seats: int, period: str, addons: list | None = None) -> float:
     price = plan.price_yearly if period == "yearly" else plan.price_monthly
+    for addon in addons or []:
+        price += addon.price_yearly if period == "yearly" else addon.price_monthly
     return round(price * seats, 2)
 
 
-def price_quote(db: Session, org: Organization, plan: Plan, seats: int, period: str, coupon_code: str = "") -> dict:
-    """List price, the discounts that apply (the workspace's own, then a coupon) and what is due."""
+def chosen_addons(db: Session, plan: Plan, keys: list[str], free: list[str] | None = None) -> list:
+    """The add-ons someone asked for, without the ones the plan already includes or that are free."""
+    wanted = set(keys)
+    catalogue = {a.key: a for a in all_addons(db)}
+    unknown = [k for k in wanted if k not in catalogue or not catalogue[k].is_public]
+    if unknown:
+        raise HTTPException(422, f"Unknown add-on: {unknown[0]}")
+    included = set(plan_features(plan))
+    skip = set(free or [])
+    return [a for a in catalogue.values()
+            if a.key in wanted and a.key not in skip and not set(addon_features(a)) <= included]
+
+
+def price_quote(db: Session, org: Organization, plan: Plan, seats: int, period: str, coupon_code: str = "",
+                addon_keys: list[str] | None = None) -> dict:
+    """List price (plan plus add-ons), the discounts that apply (the workspace's own, then a coupon) and what is due."""
     from .models import Coupon
 
-    list_amount = quote(plan, seats, period)
+    addons = chosen_addons(db, plan, addon_keys or [], split_keys(org.free_addons))
+    list_amount = quote(plan, seats, period, addons)
     amount = list_amount
     notes = []
     if org.discount_percent:
@@ -310,9 +430,13 @@ def price_quote(db: Session, org: Organization, plan: Plan, seats: int, period: 
             amount -= coupon.amount_off
             notes.append(f"{coupon.amount_off:g} off with {coupon.code}")
     amount = round(max(0.0, amount), 2)
+    per_user = lambda item: item.price_yearly if period == "yearly" else item.price_monthly  # noqa: E731
     return {
         "list_amount": list_amount, "amount": amount, "discount": round(list_amount - amount, 2),
         "discount_note": ", ".join(notes)[:200], "coupon_code": coupon.code if coupon else "",
+        "lines": [{"name": plan.name, "per_user": per_user(plan), "amount": round(per_user(plan) * seats, 2)}]
+        + [{"name": a.name, "key": a.key, "per_user": per_user(a), "amount": round(per_user(a) * seats, 2)} for a in addons],
+        "addons": [a.key for a in addons],
     }
 
 
@@ -354,6 +478,71 @@ def create_organization(db: Session, name: str, settings: dict | None = None) ->
 # ───────────── Start-up ─────────────
 
 
+def _once(db: Session, key: str) -> bool:
+    """True the first time a one-off upgrade step runs on this installation."""
+    if db.get(PlatformSetting, key):
+        return False
+    db.add(PlatformSetting(key=key, value="done"))
+    db.flush()
+    return True
+
+
+def _seed_addons(db: Session) -> None:
+    from .models import Addon
+
+    existing = {a.key for a in db.scalars(select(Addon))}
+    for spec in DEFAULT_ADDONS:
+        if spec["key"] not in existing:
+            db.add(Addon(**{**spec, "features": json.dumps(spec["features"])}))
+    db.flush()
+
+
+def _upgrade_plans(db: Session) -> None:
+    """Once, when add-ons arrive: plans the platform owner never edited take the new line-up; edited
+    ones keep what they had, plus the features everyone used to get for free."""
+    if not _once(db, "plans_v2"):
+        return
+    specs = {p["key"]: p for p in DEFAULT_PLANS}
+    for plan in db.scalars(select(Plan)):
+        spec = specs.get(plan.key)
+        original = ORIGINAL_PLANS.get(plan.key)
+        untouched = original is not None and all(
+            (plan_features(plan) if k == "features" else getattr(plan, k)) == v for k, v in original.items()
+        )
+        if spec and set(plan_features(plan)) == set(spec["features"]):
+            pass  # already the current version (a fresh installation)
+        elif untouched and spec:
+            for k in ("description", "price_monthly", "price_yearly", "max_users", "max_projects", "sort"):
+                setattr(plan, k, spec[k])
+            plan.features = json.dumps(spec["features"])
+        elif plan.key not in ("trial", "enterprise"):
+            have = set(plan_features(plan)) | set(FORMERLY_FREE)
+            if "approvals" in have:
+                have.add("approvals_advanced")  # strict sign-off came with approvals before
+            plan.features = json.dumps([f for f in FEATURES if f in have])
+        if spec and plan.key in ("trial", "free", "starter", "professional", "business", "enterprise"):
+            plan.sort = spec["sort"]
+    db.flush()
+
+
+def _grandfather_addons(db: Session) -> None:
+    """Once: workspaces that existed before add-ons keep, free of charge, the add-ons for features they
+    could already use, so nobody loses anything they had."""
+    if not _once(db, "addons_grandfathered"):
+        return
+    catalogue = all_addons(db)
+    for org in db.scalars(select(Organization)):
+        if org.plan and org.plan.key == "trial":
+            continue  # the trial has everything; a plan chosen later decides
+        have = set(plan_features(org.plan))
+        grant = [a.key for a in catalogue
+                 if set(addon_features(a)) & set(FORMERLY_FREE) - have and a.key in ("client_portal", "time_budgets", "test_management", "resource_planning")]
+        if grant:
+            org.addons = ",".join(sorted(set(split_keys(org.addons)) | set(grant)))
+            org.free_addons = ",".join(sorted(set(split_keys(org.free_addons)) | set(grant)))
+    db.flush()
+
+
 def bootstrap(db: Session) -> None:
     """Seed plans and settings, and convert a pre-SaaS installation into the first workspace."""
     existing = {p.key for p in db.scalars(select(Plan))}
@@ -365,7 +554,7 @@ def bootstrap(db: Session) -> None:
     # Capabilities added after a plan was created are switched on for the plans meant to have everything.
     done = db.get(PlatformSetting, "features_added")
     known = set((done.value if done else "").split(","))
-    new = [f for f in ("security",) if f not in known]
+    new = [f for f in ("security", "approvals_advanced", "time_tracking", "tests", "client_portal", "portfolio") if f not in known]
     if new:
         for plan in db.scalars(select(Plan).where(Plan.key.in_(("trial", "enterprise")))):
             plan.features = json.dumps([f for f in FEATURES if f in set(plan_features(plan)) | set(new)])
@@ -374,6 +563,9 @@ def bootstrap(db: Session) -> None:
             done.value = value
         else:
             db.add(PlatformSetting(key="features_added", value=value))
+
+    _seed_addons(db)
+    _upgrade_plans(db)
 
     orphans = db.scalar(select(func.count()).select_from(User).where(User.org_id.is_(None)))
     if orphans:
@@ -392,6 +584,8 @@ def bootstrap(db: Session) -> None:
         db.execute(update(Project).where(Project.org_id.is_(None)).values(org_id=org.id).execution_options(include_deleted=True))
         db.execute(update(ProjectTemplate).where(ProjectTemplate.org_id.is_(None), ProjectTemplate.builtin.is_(False)).values(org_id=org.id))
         db.execute(update(AuditLog).where(AuditLog.org_id.is_(None)).values(org_id=org.id))
+
+    _grandfather_addons(db)
 
     # There must always be someone who runs the platform: the longest-standing administrator.
     if not db.scalar(select(User.id).where(User.is_platform_admin.is_(True)).limit(1)):

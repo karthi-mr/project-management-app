@@ -169,7 +169,7 @@ function NewProjectModal({ onClose }) {
           )}
           <ProjectFormFields form={form} setForm={setForm} />
           <Field label="Stage sign-off for features and milestones" hint="You can change this later in the project's settings." as="div">
-            <SignoffModePicker value={form.signoff_mode} onChange={(signoff_mode) => setForm((f) => ({ ...f, signoff_mode }))} />
+            <SignoffModePicker value={form.signoff_mode} onChange={(signoff_mode) => setForm((f) => ({ ...f, signoff_mode }))} strictLocked={!user?.org?.features?.includes('approvals_advanced')} />
           </Field>
           {users.length > 0 && (
             <Field label="Team members" hint="You are added automatically as the owner." as="div">

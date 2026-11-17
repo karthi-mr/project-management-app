@@ -128,7 +128,15 @@ function DeleteWorkspaceModal({ org, onClose }) {
   )
 }
 
-function RequestModal({ plan, org, settings, onClose, onSent }) {
+/** An add-on is already covered when the plan includes everything it unlocks, or when it was given free. */
+function addonState(addon, plan, org) {
+  if (plan && addon.features.every((f) => plan.features.includes(f))) return 'included'
+  const mine = org.addons.find((a) => a.key === addon.key)
+  if (mine?.free) return 'free'
+  return mine ? 'active' : 'off'
+}
+
+function RequestModal({ plan, org, settings, addons, preselect, onClose, onSent }) {
   const toast = useToast()
   const minSeats = Math.max(1, org.usage.users)
   const [period, setPeriod] = useState('yearly')
@@ -139,26 +147,38 @@ function RequestModal({ plan, org, settings, onClose, onSent }) {
   const [quote, setQuote] = useState(null)
   const [couponError, setCouponError] = useState('')
   const [busy, setBusy] = useState(false)
-  const price = period === 'yearly' ? plan.price_yearly : plan.price_monthly
+  // Keep the add-ons already paid for, plus the one the person clicked on.
+  const [chosen, setChosen] = useState(() => new Set([...org.addons.filter((a) => !a.free).map((a) => a.key), ...(preselect ? [preselect] : [])]))
+  const buyable = addons.filter((a) => !['included', 'free'].includes(addonState(a, plan, org)))
+  const picked = buyable.filter((a) => chosen.has(a.key))
+  const perUser = (item) => (period === 'yearly' ? item.price_yearly : item.price_monthly)
+  const price = perUser(plan) + picked.reduce((sum, a) => sum + perUser(a), 0)
   const total = price * (Number(seats) || 0)
+  const pickedKeys = picked.map((a) => a.key).join(',')
+  const toggle = (key) => setChosen((set) => {
+    const next = new Set(set)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    return next
+  })
   // The server works out discounts (your workspace's own, and any coupon).
   useEffect(() => {
     if (!Number(seats)) return undefined
     const timer = setTimeout(() => {
-      api('/billing/quote', { method: 'POST', body: { plan_id: plan.id, seats: Number(seats), period, coupon_code: coupon.trim() } })
+      api('/billing/quote', { method: 'POST', body: { plan_id: plan.id, seats: Number(seats), period, coupon_code: coupon.trim(), addons: pickedKeys ? pickedKeys.split(',') : [] } })
         .then((q) => { setQuote(q); setCouponError('') })
         .catch((err) => { setQuote(null); setCouponError(coupon.trim() ? err.message : '') })
     }, 300)
     return () => clearTimeout(timer)
-  }, [plan.id, seats, period, coupon])
+  }, [plan.id, seats, period, coupon, pickedKeys])
   const saving = plan.price_monthly * 12 - plan.price_yearly
 
   const submit = async (e) => {
     e.preventDefault()
     setBusy(true)
     try {
-      await api('/billing/requests', { method: 'POST', body: { plan_id: plan.id, seats: Number(seats), period, payment_reference: reference, note, coupon_code: couponError ? '' : coupon.trim() } })
-      toast('Request sent. Your license is activated once the payment is confirmed.')
+      const sent = await api('/billing/requests', { method: 'POST', body: { plan_id: plan.id, seats: Number(seats), period, payment_reference: reference, note, coupon_code: couponError ? '' : coupon.trim(), addons: picked.map((a) => a.key) } })
+      toast(sent.status === 'approved' ? `You are now on ${plan.name}.` : 'Request sent. Your license is activated once the payment is confirmed.')
       onSent()
     } catch (err) {
       toast(err.message, 'error')
@@ -182,6 +202,36 @@ function RequestModal({ plan, org, settings, onClose, onSent }) {
               <input className="input" type="number" min={minSeats} max={plan.max_users ?? 100000} value={seats} onChange={(e) => setSeats(e.target.value)} required />
             </Field>
           </div>
+          {addons.length > 0 && (
+            <div>
+              <div className="section-title">Add-ons</div>
+              <div className="addon-picks">
+                {addons.map((a) => {
+                  const state = addonState(a, plan, org)
+                  const fixed = state === 'included' || state === 'free'
+                  return (
+                    <label key={a.key} className={`addon-pick ${fixed ? 'fixed' : ''}`}>
+                      <input type="checkbox" checked={fixed || chosen.has(a.key)} disabled={fixed} onChange={() => toggle(a.key)} />
+                      <span className="grow">
+                        <b>{a.name}</b>
+                        <span className="small muted">{a.description}</span>
+                      </span>
+                      <span className="small nowrap">
+                        {state === 'included' ? `In ${plan.name}` : state === 'free' ? 'Free for you' : `+${money(perUser(a), settings.currency)}`}
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+          {quote?.lines?.length > 1 && (
+            <div className="quote-lines">
+              {quote.lines.map((line) => (
+                <div className="row between" key={line.name}><span className="muted">{line.name} · {money(line.per_user, settings.currency)} × {seats}</span><span>{money(line.amount, settings.currency)}</span></div>
+              ))}
+            </div>
+          )}
           <div className="quote">
             <span className="muted">{seatsText(seats || 0)} × {money(price, settings.currency)} per {period === 'yearly' ? 'year' : 'month'}</span>
             <b>
@@ -202,11 +252,11 @@ function RequestModal({ plan, org, settings, onClose, onSent }) {
             <input className="input" value={reference} onChange={(e) => setReference(e.target.value)} maxLength={200} placeholder="For example UTR / transaction number" />
           </Field>
           <Field label="Note (optional)"><textarea className="textarea" rows={2} value={note} onChange={(e) => setNote(e.target.value)} maxLength={2000} /></Field>
-          <div className="callout"><Info size={16} /><span>Nothing is charged here. We activate your license by hand once the transfer has arrived.</span></div>
+          {total > 0 && <div className="callout"><Info size={16} /><span>Nothing is charged here. We activate your license by hand once the transfer has arrived.</span></div>}
         </div>
         <div className="modal-footer">
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" disabled={busy}>{busy ? <Spinner /> : 'Send request'}</button>
+          <button className="btn btn-primary" disabled={busy}>{busy ? <Spinner /> : total > 0 ? 'Send request' : `Switch to ${plan.name}`}</button>
         </div>
       </form>
     </Modal>
@@ -246,9 +296,17 @@ export default function Billing() {
     refresh().catch(() => {})
   }, [toast, refresh])
   useEffect(() => { load() }, [load])
+  // Arriving from an upgrade notice ("See add-ons"): scroll to the add-ons once they are on screen.
+  useEffect(() => {
+    if (!data || window.location.hash !== '#addons') return undefined
+    // After the page's own scroll-to-top on arrival.
+    const timer = setTimeout(() => document.getElementById('addons')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 350)
+    return () => clearTimeout(timer)
+  }, [data])
 
   if (!data) return <div className="page"><PageSkeleton /></div>
-  const { org, plans, settings, requests, invoices } = data
+  const { org, plans, settings, requests, invoices, addons = [] } = data
+  const addonName = (key) => addons.find((a) => a.key === key)?.name || key
   const pending = requests.find((r) => r.status === 'pending')
   const currentPaid = !org.is_trial && org.plan
 
@@ -299,6 +357,11 @@ export default function Billing() {
                   ? `Ended on ${formatDate(org.valid_until, true)}. The workspace is read-only until it is renewed.`
                   : `${org.is_trial ? 'Trial ends' : 'Valid until'} ${formatDate(org.valid_until, true)} (${org.days_left} ${org.days_left === 1 ? 'day' : 'days'} left).`}
             </div>
+            {org.addons.length > 0 && (
+              <div className="row row-wrap" style={{ gap: 6 }}>
+                {org.addons.map((a) => <span className="tag" key={a.key}>{a.name}{a.free ? ' · free' : ''}</span>)}
+              </div>
+            )}
             {org.license_key && (
               <div>
                 <div className="section-title">License key</div>
@@ -325,7 +388,7 @@ export default function Billing() {
         <div className="card card-pad stack" style={{ marginBottom: 18, gap: 10, borderColor: '#f59e0b' }}>
           <div className="row between row-wrap">
             <div>
-              <b>{pending.plan_name}</b> for {seatsText(pending.seats)}, {pending.period}: <b>{money(pending.amount, pending.currency)}</b>{pending.discount_note ? <span className="muted small"> ({pending.discount_note})</span> : null}{' '}
+              <b>{pending.plan_name}</b>{pending.addons.length > 0 && ` + ${pending.addons.map(addonName).join(', ')}`} for {seatsText(pending.seats)}, {pending.period}: <b>{money(pending.amount, pending.currency)}</b>{pending.discount_note ? <span className="muted small"> ({pending.discount_note})</span> : null}{' '}
               <RequestBadge status="pending" />
               <div className="small muted">Sent {timeAgo(pending.created_at)} by {pending.requested_by}{pending.payment_reference ? ` · reference ${pending.payment_reference}` : ' · no transfer reference yet'}</div>
             </div>
@@ -350,8 +413,8 @@ export default function Billing() {
                 {money(plan.price_monthly, settings.currency)} <span>per user / month</span>
               </div>
               <div className="small muted">or {money(plan.price_yearly, settings.currency)} per user / year</div>
-              <button className={`btn btn-block ${current ? '' : 'btn-primary'}`} disabled={Boolean(pending) || org.status === 'suspended'} onClick={() => setChoosing(plan)} title={pending ? 'You already have a request waiting' : undefined}>
-                {current ? 'Renew or change users' : `Request ${plan.name}`}
+              <button className={`btn btn-block ${current ? '' : 'btn-primary'}`} disabled={Boolean(pending) || org.status === 'suspended'} onClick={() => setChoosing({ plan })} title={pending ? 'You already have a request waiting' : undefined}>
+                {current ? 'Renew or change users' : plan.price_monthly === 0 ? `Switch to ${plan.name}` : `Request ${plan.name}`}
               </button>
               <PlanFeatures plan={plan} />
             </div>
@@ -359,6 +422,41 @@ export default function Billing() {
         })}
       </div>
       {plans.length === 0 && <div className="card"><Empty icon={CreditCard} title="No plans are on sale right now">{settings.support_email ? `Contact ${settings.support_email}.` : 'Contact support.'}</Empty></div>}
+
+      {addons.length > 0 && (
+        <>
+          <h2 id="addons" style={{ marginBottom: 4 }}>Add-ons</h2>
+          <p className="muted small" style={{ marginBottom: 12 }}>
+            Extras on top of any plan, priced per user. {currentPaid ? `Add one to ${org.plan.name} with a new request.` : 'Choose a plan above and pick add-ons in the same request.'}
+          </p>
+          <div className="addon-grid" style={{ marginBottom: 24 }}>
+            {addons.map((a) => {
+              const state = addonState(a, currentPaid ? org.plan : null, org)
+              const covered = state !== 'off' || (!currentPaid && org.status === 'trial')
+              return (
+                <div className={`card addon-card ${state !== 'off' ? 'on' : ''}`} key={a.key}>
+                  <div className="row between" style={{ gap: 8 }}>
+                    <h3>{a.name}</h3>
+                    {state === 'active' && <span className="tag">Active</span>}
+                    {state === 'free' && <span className="tag">Free for you</span>}
+                    {state === 'included' && <span className="tag">In your plan</span>}
+                    {state === 'off' && !currentPaid && org.status === 'trial' && <span className="tag">In your trial</span>}
+                  </div>
+                  <p className="muted small grow">{a.description}</p>
+                  <div className="row between row-wrap" style={{ gap: 8 }}>
+                    <span><b>{money(a.price_monthly, settings.currency)}</b> <span className="muted small">per user / month</span></span>
+                    {!covered && currentPaid && (
+                      <button className="btn btn-sm btn-primary" disabled={Boolean(pending) || org.status === 'suspended'} onClick={() => setChoosing({ plan: plans.find((p) => p.id === org.plan.id) || org.plan, addon: a.key })}>
+                        Add
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
 
       <div className="grid grid-2">
         <div className="card">
@@ -370,7 +468,7 @@ export default function Billing() {
                 <tbody>
                   {requests.map((r) => (
                     <tr key={r.id}>
-                      <td><b>{r.plan_name}</b><div className="faint small">{seatsText(r.seats)} · {r.period}</div></td>
+                      <td><b>{r.plan_name}</b><div className="faint small">{r.addons.length > 0 && `+ ${r.addons.map(addonName).join(', ')} · `}{seatsText(r.seats)} · {r.period}</div></td>
                       <td>{money(r.amount, r.currency)}</td>
                       <td><RequestBadge status={r.status} />{r.decision_note && <div className="muted small" style={{ marginTop: 3 }}>“{r.decision_note}”</div>}</td>
                       <td className="muted small">{formatDate(r.created_at, true)}</td>
@@ -424,7 +522,7 @@ export default function Billing() {
       </div>
 
       {deleting && <DeleteWorkspaceModal org={org} onClose={() => setDeleting(false)} />}
-      {choosing && <RequestModal plan={choosing} org={org} settings={settings} onClose={() => setChoosing(null)} onSent={() => { setChoosing(null); load() }} />}
+      {choosing && <RequestModal plan={choosing.plan} preselect={choosing.addon} addons={addons} org={org} settings={settings} onClose={() => setChoosing(null)} onSent={() => { setChoosing(null); load() }} />}
       {editing && <WorkspaceModal org={org} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); load() }} />}
       {invoiceId && <InvoiceModal invoiceId={invoiceId} onClose={() => setInvoiceId(null)} />}
     </div>

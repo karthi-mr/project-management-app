@@ -113,6 +113,21 @@ export function Landing() {
             ))}
           </div>
         )}
+        {data?.addons?.length > 0 && (
+          <>
+            <h3 style={{ marginTop: 34, marginBottom: 6, textAlign: 'center' }}>Add-ons for any plan</h3>
+            <p className="muted small" style={{ textAlign: 'center', marginBottom: 16 }}>Need one thing more? Add it to your plan, priced per user.</p>
+            <div className="addon-grid">
+              {data.addons.map((a) => (
+                <div className="card addon-card" key={a.key}>
+                  <h3>{a.name}</h3>
+                  <p className="muted small grow">{a.description}</p>
+                  <span><b>+{money(a.price_monthly, s.currency)}</b> <span className="muted small">per user / month</span></span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </section>
 
       <section className="hero" style={{ paddingTop: 30 }}>

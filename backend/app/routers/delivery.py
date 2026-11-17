@@ -823,6 +823,7 @@ def project_health(project: Project, today: date, high_risks: int) -> str:
 
 @router.get("/portfolio")
 def portfolio(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    require_feature(db, user, "portfolio")
     today = date.today()
     allowed = section_filter(db, user)
     rows = []

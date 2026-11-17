@@ -72,6 +72,7 @@ def list_criteria(project_id: int, user: User = Depends(get_current_user), db: S
 def save_criteria(project_id: int, data: CriteriaIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Replace the project's checklists. Existing lines keep their ticks."""
     project = get_project(db, project_id, user, manage=True)
+    require_feature(db, user, "approvals_advanced")
     existing = {c.id: c for c in db.scalars(select(SignoffCriterion).where(SignoffCriterion.project_id == project.id))}
     kept = set()
     for position, item in enumerate(data.criteria):
@@ -175,12 +176,14 @@ def _case(db: Session, case_id: int, user: User) -> TestCase:
     if not case or case.project is None:
         raise HTTPException(404, "Test case not found")
     get_project(db, case.project_id, user, section="features")
+    require_feature(db, user, "tests")
     return case
 
 
 @router.get("/projects/{project_id}/tests")
 def list_tests(project_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     get_project(db, project_id, user, section="features")
+    require_feature(db, user, "tests")
     cases = db.scalars(select(TestCase).where(TestCase.project_id == project_id).order_by(TestCase.feature_id, TestCase.id)).all()
     summary = {"total": len(cases), "passed": 0, "failed": 0, "blocked": 0, "not_run": 0}
     for c in cases:
@@ -191,6 +194,7 @@ def list_tests(project_id: int, user: User = Depends(get_current_user), db: Sess
 @router.post("/projects/{project_id}/tests", status_code=201)
 def create_test(project_id: int, data: TestCaseIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     project = get_project(db, project_id, user, section="features")
+    require_feature(db, user, "tests")
     _feature_in_project(db, project.id, data.feature_id)
     case = TestCase(project_id=project.id, feature_id=data.feature_id, title=data.title.strip(), steps=data.steps, expected=data.expected, created_by_id=user.id)
     db.add(case)
@@ -260,6 +264,7 @@ def record_result(case_id: int, data: TestResultIn, user: User = Depends(get_cur
 def reset_tests(project_id: int, feature_id: int | None = None, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Start a new test round: every case goes back to "not run". The history is kept."""
     project = get_project(db, project_id, user, section="features")
+    require_feature(db, user, "tests")
     stmt = select(TestCase).where(TestCase.project_id == project.id)
     if feature_id is not None:
         stmt = stmt.where(TestCase.feature_id == feature_id)
@@ -298,7 +303,7 @@ def live_link(db: Session, token: str) -> ShareLink:
     if not link or link.revoked or link.project is None or (link.expires_at and link.expires_at < utcnow()):
         raise HTTPException(404, "This link is not valid any more")
     org = db.get(Organization, link.project.org_id)
-    if org is None or org.suspended:
+    if org is None or org.suspended or not has_feature(db, org.id, "client_portal"):
         raise HTTPException(404, "This link is not valid any more")
     return link
 
@@ -360,6 +365,7 @@ class ReplyIn(BaseModel):
 @router.get("/projects/{project_id}/feedback")
 def project_feedback(project_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     get_project(db, project_id, user)
+    require_feature(db, user, "client_portal")
     rows = db.scalars(select(ShareFeedback).where(ShareFeedback.project_id == project_id).order_by(ShareFeedback.resolved, ShareFeedback.id.desc()).limit(200)).all()
     return [feedback_out(f, private=True) for f in rows]
 
@@ -370,6 +376,7 @@ def answer_feedback(feedback_id: int, data: ReplyIn, user: User = Depends(get_cu
     if not feedback:
         raise HTTPException(404, "Feedback not found")
     project = get_project(db, feedback.project_id, user)
+    require_feature(db, user, "client_portal")
     if not signoff.is_approver(db, project, user):
         raise HTTPException(403, "Only the project owner or a manager can answer clients")
     if data.reply is not None:

@@ -1,0 +1,58 @@
+{
+  "voice": "Samantha",
+  "rate": 172,
+  "scenes": [
+    {
+      "id": "intro",
+      "text": "Meet Trackly. Project management with sign-off built in, so nothing moves forward until the right people approve it."
+    },
+    {
+      "id": "dashboard",
+      "text": "Your dashboard shows what needs you today: your work, the approvals waiting for you, and how every project is doing."
+    },
+    {
+      "id": "features",
+      "text": "Inside a project, every feature follows a clear lifecycle: from proposed, through design, development and testing, all the way to release."
+    },
+    {
+      "id": "signoff",
+      "text": "When a stage is done, the project owner or a manager signs it off in one click, and the feature moves to the next stage."
+    },
+    {
+      "id": "approvals",
+      "text": "Team members can request sign-off. Approvers see exactly what is waiting for them, and the first one to decide settles it."
+    },
+    {
+      "id": "milestones",
+      "text": "Link features to milestones, and they move together. When its features are signed off, the milestone follows."
+    },
+    {
+      "id": "board",
+      "text": "Day-to-day work lives on the board, with issues, priorities and owners, updated live for the whole team."
+    },
+    {
+      "id": "budget",
+      "text": "Keep an eye on money too. Set a budget for each project, and Trackly turns logged hours into costs, so you always know what is spent and what is left."
+    },
+    {
+      "id": "chat",
+      "text": "When the team needs to talk, built-in chat keeps conversations right next to the work, with group chats, direct messages, replies and reactions."
+    },
+    {
+      "id": "roadmap",
+      "text": "The roadmap keeps every date in view across all your projects."
+    },
+    {
+      "id": "security",
+      "text": "Each company gets its own private workspace, with its own workspace ID, two-factor sign-in and security controls."
+    },
+    {
+      "id": "modules",
+      "text": "And you decide what your team sees. Switch modules on or off to keep Trackly as simple as you need."
+    },
+    {
+      "id": "outro",
+      "text": "Trackly. Plan it, build it, sign it off. Start your free fourteen-day trial today."
+    }
+  ]
+}

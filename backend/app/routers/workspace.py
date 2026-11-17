@@ -324,6 +324,7 @@ def _recalculate(db: Session, issue: Issue) -> None:
 @router.get("/issues/{issue_id}/time")
 def list_time(issue_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     issue = _get_issue(db, issue_id, user)
+    require_feature(db, user, "time_tracking")
     entries = sorted(issue.time_entries, key=lambda t: (t.day, t.id), reverse=True)
     return [time_out(t) for t in entries]
 
@@ -336,6 +337,7 @@ def log_time(
     db: Session = Depends(get_db),
 ):
     issue = _get_issue(db, issue_id, user)
+    require_feature(db, user, "time_tracking")
     if data.day > date.today() + timedelta(days=1):
         raise HTTPException(422, "Time cannot be logged for a future date")
     entry = TimeEntry(
@@ -374,6 +376,7 @@ def timesheet(
     db: Session = Depends(get_db),
 ):
     """Time logged between two dates. Everyone sees their own; administrators can view anyone's."""
+    require_feature(db, user, "time_tracking")
     if end < start or (end - start).days > 92:
         raise HTTPException(422, "Choose a range of at most three months")
     target = user.id if user_id is None else user_id

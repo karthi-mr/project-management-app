@@ -91,13 +91,16 @@ ADDED_COLUMNS = {
         "require_two_factor": "BOOLEAN NOT NULL DEFAULT FALSE",
         "hidden_modules": "TEXT NOT NULL DEFAULT ''",
         "public_id": "VARCHAR(8)",
+        "addons": "TEXT NOT NULL DEFAULT ''",
+        "free_addons": "TEXT NOT NULL DEFAULT ''",
     },
     "license_requests": {
+        "addons": "TEXT NOT NULL DEFAULT ''",
         "list_amount": "FLOAT",
         "coupon_code": "VARCHAR(40) NOT NULL DEFAULT ''",
         "discount_note": "VARCHAR(200) NOT NULL DEFAULT ''",
     },
-    "invoices": {"list_amount": "FLOAT", "discount_note": "VARCHAR(200) NOT NULL DEFAULT ''"},
+    "invoices": {"addon_names": "TEXT NOT NULL DEFAULT ''", "list_amount": "FLOAT", "discount_note": "VARCHAR(200) NOT NULL DEFAULT ''"},
     "project_templates": {"org_id": "INTEGER REFERENCES organizations(id) ON DELETE CASCADE"},
     "audit_logs": {"org_id": "INTEGER REFERENCES organizations(id) ON DELETE CASCADE"},
     "projects": {

@@ -3,7 +3,7 @@ import { Check, Copy, Eye, Link2, MessageSquare, Plus, ShieldCheck, ThumbsUp, Tr
 import { api, notifyChanged } from '../api'
 import { useConfirm, useToast } from '../context'
 import { Badge, FEATURE_STAGES, Field, MILESTONE_STAGES, Modal, Spinner, formatDate, timeAgo } from '../ui'
-import { useFeature } from './License'
+import { PlanGate, useFeature } from './License'
 import SignoffModePicker from './SignoffModePicker'
 
 /* Project settings: the sign-off rule, and read-only links for clients. */
@@ -11,6 +11,7 @@ import SignoffModePicker from './SignoffModePicker'
 export function SignoffCard({ project, reload }) {
   const toast = useToast()
   const hasApprovals = useFeature('approvals')
+  const advanced = useFeature('approvals_advanced')
   const [busy, setBusy] = useState(false)
   const managers = project.members.filter((m) => m.role === 'manager')
   const owner = project.members.find((m) => m.role === 'owner')
@@ -34,7 +35,7 @@ export function SignoffCard({ project, reload }) {
       <div className="row between row-wrap">
         <h2 className="icon-label"><ShieldCheck size={17} /> <span>Stage sign-off</span></h2>
       </div>
-      <SignoffModePicker value={project.signoff_mode} onChange={setMode} disabled={busy || !project.can_manage} />
+      <SignoffModePicker value={project.signoff_mode} onChange={setMode} disabled={busy || !project.can_manage} strictLocked={!advanced} />
       {project.signoff_mode !== 'off' && (
         <p className="muted small">
           Features and milestones move one stage at a time and nobody skips a stage. Only the owner or a manager can move
@@ -48,8 +49,12 @@ export function SignoffCard({ project, reload }) {
       {!hasApprovals && project.signoff_mode !== 'off' && (
         <div className="small danger-text">Your plan does not include approvals, so this rule is not enforced right now.</div>
       )}
-      {project.signoff_mode !== 'off' && project.can_manage && <Reminders project={project} reload={reload} />}
-      {project.signoff_mode !== 'off' && <Criteria project={project} />}
+      {project.signoff_mode !== 'off' && (
+        <PlanGate feature="approvals_advanced" compact>
+          {project.can_manage && <Reminders project={project} reload={reload} />}
+          <Criteria project={project} />
+        </PlanGate>
+      )}
     </div>
   )
 }

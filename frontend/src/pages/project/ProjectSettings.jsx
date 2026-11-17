@@ -153,8 +153,12 @@ export function ProjectSettings({ project, issues, reload }) {
       </form>
       <LogoCard project={project} reload={reload} />
       <SignoffCard project={project} reload={reload} />
-      {mod.client_access !== false && <ShareLinksCard project={project} />}
-      {mod.client_access !== false && <ClientFeedbackCard project={project} />}
+      {mod.client_access !== false && (
+        <PlanGate feature="client_portal" compact>
+          <ShareLinksCard project={project} />
+          <ClientFeedbackCard project={project} />
+        </PlanGate>
+      )}
       <PlanGate feature="customization" compact>
         <WorkflowCard key={JSON.stringify(project.statuses)} project={project} issues={issues} reload={reload} />
         <FieldsCard project={project} reload={reload} />

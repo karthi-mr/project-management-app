@@ -178,3 +178,40 @@ test('every project tab and main page opens without errors', async ({ page, requ
   }
   errors.check()
 })
+
+test('a customer adds an add-on to their plan and gets the feature once it is activated', async ({ browser, request }) => {
+  const ws = await signUp(request)
+  const owner = await ownerToken(request)
+  // Put the workspace on Starter, which has no test management.
+  const plans = Object.fromEntries((await call(request, null, 'GET', '/api/public/plans')).plans.map((p) => [p.key, p]))
+  const first = await call(request, ws.token, 'POST', '/api/billing/requests', { plan_id: plans.starter.id, seats: 5, period: 'monthly' })
+  await call(request, owner, 'POST', `/api/platform/requests/${first.id}/approve`, { note: '' })
+  const projectId = (await call(request, ws.token, 'GET', '/api/projects'))[0].id
+  await call(request, ws.token, 'PUT', '/api/admin/modules', { modules: { tests: true } }) // new workspaces hide it
+
+  const page = await (await browser.newContext()).newPage()
+  const errors = watchErrors(page)
+  await signInAs(page, ws.token)
+  await page.goto(`/projects/${projectId}?tab=tests`)
+  await expect(page.getByText('Test management is not part of your plan')).toBeVisible()
+  await page.getByRole('link', { name: 'See add-ons' }).click()
+
+  const card = page.locator('.addon-card', { hasText: 'Test management' })
+  await card.getByRole('button', { name: 'Add' }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog.getByRole('checkbox', { name: /Test management/ })).toBeChecked()
+  await dialog.getByRole('button', { name: 'Monthly' }).click()
+  await expect(dialog.locator('.quote-lines')).toContainText('Test management')
+  await expect(dialog.locator('.quote b')).toContainText('40') // (6 + 2) × 5 users
+  await dialog.getByRole('button', { name: 'Send request' }).click()
+  await expect(page.getByText('+ Test management').first()).toBeVisible()
+
+  const pending = (await call(request, owner, 'GET', '/api/platform/requests?status=pending')).find((r) => r.org_id === ws.user.org.id)
+  expect(pending.addons).toEqual(['test_management'])
+  await call(request, owner, 'POST', `/api/platform/requests/${pending.id}/approve`, { note: '' })
+  await page.goto('/billing')
+  await expect(page.locator('.addon-card', { hasText: 'Test management' }).getByText('Active')).toBeVisible()
+  await page.goto(`/projects/${projectId}?tab=tests`)
+  await expect(page.getByText('Test management is not part of your plan')).toHaveCount(0)
+  errors.check()
+})
