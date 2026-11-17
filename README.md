@@ -465,10 +465,9 @@ the 10 recovery codes. From then on, signing in asks for the 6-digit code after 
 
 ## Tests
 
-The backend has an automated test suite (`backend/tests/`, 106 tests) covering sign-in and two-factor,
-workspace isolation, plans and licences, billing, the sign-off lifecycle, projects and issues, test
-management, client links and the owner console. Each run uses its own brand-new database, so it never
-touches your data.
+**Backend** (`backend/tests/`, 114 tests): sign-in and two-factor, workspace isolation, plans and
+licences, billing, the sign-off lifecycle and its modes, approvals, modules, projects and issues, test
+management, client links and the owner console. Each run uses a brand-new database.
 
 ```bash
 cd backend && .venv/bin/pip install -r requirements-dev.txt
@@ -478,12 +477,38 @@ cd backend && .venv/bin/pip install -r requirements-dev.txt
 cd backend && .venv/bin/pytest
 ```
 
-To run the same tests on PostgreSQL, point `TEST_DATABASE_URL` at an empty database whose name contains
-`test`:
+On PostgreSQL, point `TEST_DATABASE_URL` at an empty database whose name contains `test`:
 
 ```bash
 cd backend && TEST_DATABASE_URL=postgresql://trackly:trackly@127.0.0.1:55432/trackly_test .venv/bin/pytest
 ```
 
-GitHub runs the tests on both databases, and checks that the frontend builds, on every push
-(`.github/workflows/tests.yml`).
+**Browser** (`frontend/e2e/`, Playwright): signs up, signs in, signs off stages in simple and strict
+mode, decides approvals, switches modules, requests and activates a licence, and opens every page and
+project tab checking for errors. It builds the frontend and starts the app on a throwaway database.
+
+```bash
+cd frontend && npx playwright install chromium
+```
+
+```bash
+cd frontend && npm run test:e2e
+```
+
+GitHub runs all of this on every push (`.github/workflows/tests.yml`).
+
+## Sign-off modes, approvals and modules
+
+- **Sign-off mode per project**, chosen when the project is created and changeable in its settings:
+  *Off* (stages move freely), *Simple* (default: the owner and managers sign a stage off in one click,
+  others ask them) or *Strict* (every stage needs a request approved by the owner or a manager, never by
+  the person who asked). Projects created before modes existed kept *Strict* (or *Off* if they had
+  sign-off switched off).
+- **One rule for every approval.** Stage sign-offs, phase, feature, release and other approvals are all
+  decided by the person they were sent to, or else the owner or any manager, following the project's
+  mode. The project's **Approvals** tab shows them in one place: waiting for you, waiting for others,
+  and decided.
+- **Modules** (Workspace settings, for administrators): sprints, test cases, documents, risks, time
+  tracking, budgets, portfolio, workload, chat, automation and client links can each be hidden for the
+  whole workspace. Hiding only hides; nothing is deleted. New workspaces start with time tracking,
+  budgets, portfolio, workload, automation, test cases and risks hidden. Existing workspaces keep everything.

@@ -426,7 +426,7 @@ export default function IssueModal({ issueId, onClose }) {
               placeholder="—"
             />
           </Field>
-          <TimeLog issue={issue} canManage={project?.can_manage} onChange={load} />
+          {user.org?.modules?.time !== false && <TimeLog issue={issue} canManage={project?.can_manage} onChange={load} />}
           <CustomFields fields={project?.fields} values={issue.custom} onSave={(values) => patch({ custom: values })} />
           <Field label="Repeats" hint={issue.recurrence ? 'The next one is created when this is marked done.' : undefined}>
             <select className="select" value={issue.recurrence} onChange={(e) => patch({ recurrence: e.target.value })}>

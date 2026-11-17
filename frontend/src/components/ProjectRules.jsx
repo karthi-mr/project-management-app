@@ -488,10 +488,13 @@ export function StageSignoff({ project, type, item, onChanged, compact = false, 
   const blocked = missing > 0 || behind > 0
   // Requests are decided by the owner or a manager: the one named in it, or any of them.
   // Your own request needs someone else, unless you are the only one who can approve.
+  const strictMode = project.signoff_mode === 'strict'
   const others = (project.approver_ids || []).filter((id) => id !== user.id)
-  const mayDecide = Boolean(pending) && project.can_approve && (
-    pending.approver ? pending.approver.id === user.id : pending.requester?.id !== user.id || others.length === 0
+  const mayDecide = Boolean(pending) && (
+    pending.approver ? pending.approver.id === user.id
+      : project.can_approve && (!strictMode || pending.requester?.id !== user.id || others.length === 0)
   )
+  const oneClick = !strictMode && project.can_approve
   const askable = project.members.filter((m) => (project.approver_ids || []).includes(m.id) && m.id !== user.id)
   const tick = async (c) => {
     try {
@@ -506,7 +509,10 @@ export function StageSignoff({ project, type, item, onChanged, compact = false, 
   const run = async () => {
     setBusy(true)
     try {
-      if (deciding === 'request') {
+      if (deciding === 'now') {
+        await api(`/projects/${project.id}/signoffs`, { method: 'POST', body: { target_type: type, target_id: item.id, note, approve: true } })
+        toast(`${current.label} signed off. Now in ${next.label}.`)
+      } else if (deciding === 'request') {
         await api(`/projects/${project.id}/signoffs`, { method: 'POST', body: { target_type: type, target_id: item.id, note, approver_id: askWho ? Number(askWho) : null } })
         toast(askWho ? 'Sign-off requested' : 'Sign-off requested from the owner and managers')
       } else {
@@ -534,6 +540,7 @@ export function StageSignoff({ project, type, item, onChanged, compact = false, 
 
   const titles = {
     request: `Request sign-off: ${current.label}`,
+    now: `Sign off ${current.label}?`,
     approved: `Sign off ${current.label}?`, rejected: `Decline the ${current.label} sign-off?`,
   }
   return (
@@ -589,7 +596,9 @@ export function StageSignoff({ project, type, item, onChanged, compact = false, 
           )}
         </div>
       ) : next ? (
-        canEdit ? (
+        oneClick ? (
+          <button className="btn btn-sm" disabled={blocked} onClick={() => setDeciding('now')} title={blockedTitle || `Finish ${current.label} and move to ${next.label}`}><Check size={13} /> Sign off {current.label}</button>
+        ) : canEdit ? (
           <button className="btn btn-sm" disabled={blocked} onClick={() => { setAskWho(''); setDeciding('request') }} title={blockedTitle || 'Ask the owner or a manager to approve this stage'}><Send size={13} /> Request sign-off for {current.label}</button>
         ) : null
       ) : <span className="small" style={{ color: '#16a34a' }}><Check size={13} style={{ verticalAlign: -2 }} /> Every stage is signed off</span>}
@@ -603,6 +612,8 @@ export function StageSignoff({ project, type, item, onChanged, compact = false, 
               <b>{name}</b>{' '}
               {deciding === 'request'
                 ? `finished ${current.label}? It moves to ${next.label} only after the project owner or a manager approves this request.`
+                : deciding === 'now'
+                ? `moves from ${current.label} to ${next.label}. Stages cannot be skipped.`
                 : deciding === 'rejected'
                   ? `stays in ${current.label}. Tell the team what is missing.`
                   : `moves from ${current.label} to ${next.label}. Stages cannot be skipped.`}
@@ -669,42 +680,57 @@ export function Approvals({ project }) {
 
   if (!rows) return <Spinner />
   const pending = rows.filter((a) => a.status === 'pending')
+  const forMe = pending.filter((a) => a.can_decide)
+  const forOthers = pending.filter((a) => !a.can_decide)
+  const decided = rows.filter((a) => a.status !== 'pending')
+
+  const row = (a) => (
+    <div className="list-row" key={a.id} style={{ cursor: 'default', alignItems: 'flex-start' }}>
+      <Avatar user={a.requester} size={30} />
+      <span className="grow" style={{ minWidth: 0 }}>
+        <div className="row row-wrap" style={{ gap: 8 }}>
+          <span className="tag">{a.kind_label}</span>
+          <b>{a.title}</b>
+          <ApprovalBadge approval={a} />
+        </div>
+        <div className="small muted">
+          {a.requester?.id === user.id ? 'You' : a.requester?.full_name || 'Automation'} asked{' '}
+          {a.approver && a.status === 'pending' ? (a.approver.id === user.id ? 'you' : a.approver.full_name) : 'the owner and managers'} · {timeAgo(a.created_at)}
+          {a.decided_at && a.status !== 'cancelled' && ` · ${a.status} by ${a.approver?.full_name || 'the system'} ${timeAgo(a.decided_at)}`}
+        </div>
+        {a.note && <div className="small" style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>{a.note}</div>}
+        {a.decision_note && <div className="small" style={{ marginTop: 4 }}><b>{a.approver?.full_name || 'Note'}:</b> {a.decision_note}</div>}
+      </span>
+      {a.status === 'pending' && a.can_decide && (
+        <span className="row" style={{ gap: 6 }}>
+          <button className="btn btn-sm" onClick={() => setDeciding({ approval: a, decision: 'rejected' })}>Decline</button>
+          <button className="btn btn-primary btn-sm" onClick={() => setDeciding({ approval: a, decision: 'approved' })}>{a.kind === 'stage' ? 'Sign off' : 'Approve'}</button>
+        </span>
+      )}
+      {a.status === 'pending' && !a.can_decide && (a.requester?.id === user.id || project.can_manage) && (
+        <button className="btn btn-ghost btn-sm" onClick={() => cancel(a)}>Cancel</button>
+      )}
+    </div>
+  )
+  const section = (title, list, empty) => (
+    <div className="card">
+      <div className="card-header"><h2>{title}</h2><span className="muted small">{list.length}</span></div>
+      {list.length === 0 ? <div className="card-pad muted small">{empty}</div> : list.map(row)}
+    </div>
+  )
 
   return (
     <div className="stack" style={{ gap: 16 }}>
       <div className="toolbar" style={{ marginBottom: 0 }}>
-        <span className="muted grow">Stage sign-offs and approvals. They go to the project owner and managers; any one of them can decide. {pending.length} waiting.</span>
+        <span className="muted grow">
+          Every approval in this project, stage sign-offs or otherwise, is decided by the project owner or a manager
+          {project.signoff_mode === 'strict' ? ', never by the person who asked.' : '.'}
+        </span>
         <button className="btn btn-primary" onClick={() => setAsking(true)}><Plus size={16} /> Request approval</button>
       </div>
-      {rows.length === 0 ? (
-        <div className="card"><div className="empty"><h3>No approvals yet</h3><p>Use “Request approval” here, on a feature, on a release or on a phase checklist to ask someone to sign off.</p></div></div>
-      ) : (
-        <div className="card">
-          {rows.map((a) => (
-            <div className="list-row" key={a.id} style={{ cursor: 'default', alignItems: 'flex-start' }}>
-              <Avatar user={a.requester} size={30} />
-              <span className="grow" style={{ minWidth: 0 }}>
-                <div className="row row-wrap" style={{ gap: 8 }}><b>{a.title}</b><ApprovalBadge approval={a} /></div>
-                <div className="small muted">
-                  {a.requester?.full_name || 'Someone'} asked {a.approver?.id === user.id ? 'you' : a.approver?.full_name || 'the owner and managers'} · {timeAgo(a.created_at)}
-                  {a.decided_at && a.status !== 'cancelled' && ` · decided ${timeAgo(a.decided_at)}`}
-                </div>
-                {a.note && <div className="small" style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>{a.note}</div>}
-                {a.decision_note && <div className="small" style={{ marginTop: 4 }}><b>{a.approver?.full_name}:</b> {a.decision_note}</div>}
-              </span>
-              {a.status === 'pending' && project.can_approve && (a.approver ? a.approver.id === user.id : (a.requester?.id !== user.id || (a.kind === 'stage' && (project.approver_ids || []).every((id) => id === user.id)))) && (
-                <span className="row" style={{ gap: 6 }}>
-                  <button className="btn btn-sm" onClick={() => setDeciding({ approval: a, decision: 'rejected' })}>Reject</button>
-                  <button className="btn btn-primary btn-sm" onClick={() => setDeciding({ approval: a, decision: 'approved' })}>{a.kind === 'stage' ? 'Sign off' : 'Approve'}</button>
-                </span>
-              )}
-              {a.status === 'pending' && (a.requester?.id === user.id || project.can_manage) && a.approver?.id !== user.id && (
-                <button className="btn btn-ghost btn-sm" onClick={() => cancel(a)}>Cancel</button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      {section('Waiting for you', forMe, 'Nothing needs your decision.')}
+      {section('Waiting for others', forOthers, 'No other requests are open.')}
+      {decided.length > 0 && section('Decided', decided.slice(0, 50), '')}
       {asking && <RequestApprovalModal project={project} kind="general" onClose={() => setAsking(false)} onDone={load} />}
       {deciding && (
         <Modal title={`${deciding.decision === 'approved' ? 'Approve' : 'Reject'}: ${deciding.approval.title}`} onClose={() => setDeciding(null)} size="sm">

@@ -97,7 +97,10 @@ class Project(Base):
     deleted_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     name: Mapped[str] = mapped_column(String(120))
     # Features and milestones move one stage at a time, each signed off by the owner or a manager.
-    signoff_required: Mapped[bool] = mapped_column(Boolean, default=True)
+    signoff_required: Mapped[bool] = mapped_column(Boolean, default=True)  # kept in step with signoff_mode
+    # off: stages move freely. simple: owners and managers sign off in one click, others ask them.
+    # strict: every stage needs a request approved by the owner or a manager, never by the requester.
+    signoff_mode: Mapped[str] = mapped_column(String(10), default="simple")
     signoff_remind_days: Mapped[int] = mapped_column(Integer, default=2)
     signoff_escalate_days: Mapped[int] = mapped_column(Integer, default=5)
     org_id: Mapped[int | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
@@ -712,6 +715,8 @@ class Organization(Base):
     password_require_mixed_case: Mapped[bool] = mapped_column(Boolean, default=False)
     ip_allowlist: Mapped[str] = mapped_column(Text, default="")  # one address or CIDR range per line
     require_two_factor: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Optional parts of the app this workspace has switched off (comma separated keys, see saas.MODULES).
+    hidden_modules: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     plan: Mapped[Plan | None] = relationship()

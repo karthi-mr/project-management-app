@@ -18,12 +18,12 @@ from conftest import fails, ok
 class Team:
     """A project owned by the workspace admin, with a project manager and a contributor."""
 
-    def __init__(self, ws, key="SGN"):
+    def __init__(self, ws, key="SGN", mode="strict"):
         self.ws = ws
         self.owner = ws.admin
         self.manager = ws.add_person(full_name="Mia Manager")
         self.dev = ws.add_person(full_name="Dan Developer")
-        self.project = ws.project(key)
+        self.project = ws.project(key, signoff_mode=mode)
         self.pid = self.project["id"]
         ok(self.owner.api.post(f"/api/projects/{self.pid}/members", {"user_id": self.manager.id, "role": "manager"}))
         ok(self.owner.api.post(f"/api/projects/{self.pid}/members", {"user_id": self.dev.id, "role": "contributor"}))
@@ -55,6 +55,7 @@ class Team:
 
 @pytest.fixture
 def team(workspace):
+    """Most rules are tested in strict mode, the strictest; simple and off have their own tests."""
     return Team(workspace())
 
 
@@ -115,7 +116,7 @@ def test_your_own_request_is_approved_by_someone_else(team):
 
 def test_a_sole_approver_may_approve_their_own_request(workspace):
     ws = workspace()
-    project = ws.project("SOLO")
+    project = ws.project("SOLO", signoff_mode="strict")
     feature = ok(ws.admin.api.post(f"/api/projects/{project['id']}/features", {"title": "Alone", "stage": "proposed"}), 201)
     request = ok(ws.admin.api.post(f"/api/projects/{project['id']}/signoffs", {"target_type": "feature", "target_id": feature["id"]}), 201)
     ok(ws.admin.api.post(f"/api/approvals/{request['id']}/decide", {"decision": "approved"}))
@@ -135,7 +136,7 @@ def test_workspace_admins_approve_only_as_owner_or_manager(workspace):
     ws = workspace()
     lead = ws.add_person(role="manager", full_name="Lead")
     dev = ws.add_person()
-    project = ws.project("ADM", by=lead)  # owned by the lead, not the admin
+    project = ws.project("ADM", by=lead, signoff_mode="strict")  # owned by the lead, not the admin
     ok(lead.api.post(f"/api/projects/{project['id']}/members", {"user_id": dev.id, "role": "contributor"}))
     assert ok(ws.admin.api.get(f"/api/projects/{project['id']}"))["can_approve"] is False
     feature = ok(dev.api.post(f"/api/projects/{project['id']}/features", {"title": "F", "stage": "proposed"}), 201)
@@ -170,9 +171,78 @@ def test_the_last_stage_has_no_sign_off(team):
 
 def test_turning_the_rule_off_allows_free_moves(team):
     feature = team.feature()
-    fails(team.dev.api.patch(f"/api/projects/{team.pid}", {"signoff_required": False}), 403)
-    ok(team.owner.api.patch(f"/api/projects/{team.pid}", {"signoff_required": False}))
+    fails(team.dev.api.patch(f"/api/projects/{team.pid}", {"signoff_mode": "off"}), 403)
+    project = ok(team.owner.api.patch(f"/api/projects/{team.pid}", {"signoff_mode": "off"}))
+    assert project["signoff_mode"] == "off" and project["signoff_gated"] is False and project["signoff_required"] is False
     assert ok(team.dev.api.patch(f"/api/features/{feature['id']}", {"stage": "released"}))["stage"] == "released"
+
+
+def test_the_older_on_off_flag_still_maps_to_a_mode(team):
+    assert ok(team.owner.api.patch(f"/api/projects/{team.pid}", {"signoff_required": False}))["signoff_mode"] == "off"
+    assert ok(team.owner.api.patch(f"/api/projects/{team.pid}", {"signoff_required": True}))["signoff_mode"] == "strict"
+
+
+# ───────────── Modes ─────────────
+
+
+def test_new_projects_default_to_simple(workspace):
+    ws = workspace()
+    assert ws.project("DEF")["signoff_mode"] == "simple"
+    assert ws.project("OFF", signoff_mode="off")["signoff_gated"] is False
+    fails(ws.admin.api.post("/api/projects", {"name": "x", "key": "BAD", "signoff_mode": "loose"}), 422)
+
+
+def test_simple_mode_owner_and_managers_sign_off_in_one_step(workspace):
+    team = Team(workspace(), key="SMP", mode="simple")
+    feature = team.feature()
+    # One click (or a drag to the next stage) by an approver.
+    signed = ok(team.request("feature", feature["id"], by=team.manager, approve=True), 201)
+    assert signed["status"] == "approved" and team.stage("feature", feature["id"]) == "planned"
+    ok(team.owner.api.patch(f"/api/features/{feature['id']}", {"stage": "design"}))
+    assert team.stage("feature", feature["id"]) == "design"
+    fails(team.owner.api.patch(f"/api/features/{feature['id']}", {"stage": "testing"}), 409, "one at a time")
+    # Others still ask; the approve flag does nothing for them.
+    fails(team.dev.api.patch(f"/api/features/{feature['id']}", {"stage": "development"}), 409)
+    request = ok(team.request("feature", feature["id"], approve=True), 201)
+    assert request["status"] == "pending"
+    ok(team.decide(request["id"], team.manager))
+
+
+def test_simple_mode_lets_approvers_decide_their_own_requests(workspace):
+    team = Team(workspace(), key="OWN", mode="simple")
+    feature = team.feature(by=team.manager)
+    request = ok(team.request("feature", feature["id"], by=team.manager), 201)
+    ok(team.decide(request["id"], team.manager))
+    general = ok(team.manager.api.post(f"/api/projects/{team.pid}/approvals", {"kind": "general", "title": "Order laptops"}), 201)
+    ok(team.decide(general["id"], team.manager))
+
+
+def test_simple_mode_still_applies_checklists(workspace):
+    team = Team(workspace(), key="CHK", mode="simple")
+    ok(team.owner.api.put(f"/api/projects/{team.pid}/signoff-criteria", {"criteria": [{"target_type": "feature", "stage": "proposed", "text": "Scope agreed", "kind": "manual"}]}))
+    feature = team.feature()
+    fails(team.request("feature", feature["id"], by=team.owner, approve=True), 409, "Scope agreed")
+    fails(team.owner.api.patch(f"/api/features/{feature['id']}", {"stage": "planned"}), 409)
+
+
+# ───────────── One rule for every approval ─────────────
+
+
+def test_every_kind_of_approval_follows_the_same_rule_in_strict_mode(team):
+    for body in ({"kind": "general", "title": "Buy a server"}, {"kind": "phase", "phase": "planning"}):
+        request = ok(team.manager.api.post(f"/api/projects/{team.pid}/approvals", body), 201)
+        fails(team.decide(request["id"], team.manager), 403, "owner or another manager")
+        fails(team.decide(request["id"], team.dev), 403)
+        ok(team.decide(request["id"], team.owner))
+
+
+def test_approvals_say_who_can_decide(team):
+    request = ok(team.dev.api.post(f"/api/projects/{team.pid}/approvals", {"kind": "general", "title": "Hire a designer"}), 201)
+    for person, expected in ((team.owner, True), (team.manager, True), (team.dev, False)):
+        row = next(a for a in ok(person.api.get(f"/api/projects/{team.pid}/approvals")) if a["id"] == request["id"])
+        assert row["can_decide"] is expected and row["kind_label"] == "Other approval"
+    mine = ok(team.dev.api.get("/api/approvals/mine"))
+    assert [a["id"] for a in mine] == [request["id"]] and mine[0]["can_decide"] is False
 
 
 def test_deploying_a_release_does_not_skip_sign_offs(team):

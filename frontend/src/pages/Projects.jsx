@@ -20,6 +20,7 @@ import {
   formatDate,
   isOverdue,
 } from '../ui'
+import SignoffModePicker from '../components/SignoffModePicker'
 
 function suggestKey(name) {
   const words = name.toUpperCase().replace(/[^A-Z0-9 ]/g, '').split(/\s+/).filter(Boolean)
@@ -80,7 +81,7 @@ function NewProjectModal({ onClose }) {
   const [keyTouched, setKeyTouched] = useState(false)
   const [form, setForm] = useState({
     name: '', key: '', description: '', status: 'active', phase: 'planning', color: PROJECT_COLORS[0],
-    start_date: '', due_date: '', member_ids: [], template_id: '',
+    start_date: '', due_date: '', member_ids: [], template_id: '', signoff_mode: 'simple',
   })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -167,6 +168,9 @@ function NewProjectModal({ onClose }) {
             </Field>
           )}
           <ProjectFormFields form={form} setForm={setForm} />
+          <Field label="Stage sign-off for features and milestones" hint="You can change this later in the project's settings." as="div">
+            <SignoffModePicker value={form.signoff_mode} onChange={(signoff_mode) => setForm((f) => ({ ...f, signoff_mode }))} />
+          </Field>
           {users.length > 0 && (
             <Field label="Team members" hint="You are added automatically as the owner." as="div">
               <div className="check-list">

@@ -89,6 +89,7 @@ ADDED_COLUMNS = {
         "password_require_mixed_case": "BOOLEAN NOT NULL DEFAULT FALSE",
         "ip_allowlist": "TEXT NOT NULL DEFAULT ''",
         "require_two_factor": "BOOLEAN NOT NULL DEFAULT FALSE",
+        "hidden_modules": "TEXT NOT NULL DEFAULT ''",
     },
     "license_requests": {
         "list_amount": "FLOAT",
@@ -101,6 +102,7 @@ ADDED_COLUMNS = {
     "projects": {
         "org_id": "INTEGER REFERENCES organizations(id) ON DELETE CASCADE",
         "signoff_required": "BOOLEAN NOT NULL DEFAULT TRUE",
+        "signoff_mode": "VARCHAR(10) NOT NULL DEFAULT 'strict'",
         "signoff_remind_days": "INTEGER NOT NULL DEFAULT 2",
         "signoff_escalate_days": "INTEGER NOT NULL DEFAULT 5",
         "phase": "VARCHAR(20) NOT NULL DEFAULT 'planning'",
@@ -136,6 +138,9 @@ def migrate(target: Engine | None = None) -> None:
             for name, ddl in columns.items():
                 if name not in existing:
                     conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+                    if (table, name) == ("projects", "signoff_mode"):
+                        # Projects from before modes keep the rule they had: strict, or off if it was switched off.
+                        conn.exec_driver_sql("UPDATE projects SET signoff_mode = 'off' WHERE signoff_required = FALSE")
                     if (table, name) == ("milestones", "stage"):
                         # Milestones closed before stages existed have finished their lifecycle.
                         conn.exec_driver_sql("UPDATE milestones SET stage = 'completed' WHERE status = 'closed'")

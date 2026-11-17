@@ -199,3 +199,23 @@ def test_branding_and_sign_in_address(workspace, anon):
     fails(b.admin.api.patch("/api/billing/workspace", {"name": "Other", "billing_email": "", "logo_url": "https://x.example/logo.png"}), 422)
     assert ok(anon.get(f"/api/public/workspace/{slug}"))["name"] == "Branded"
     fails(anon.get("/api/public/workspace/no-such-place"), 404)
+
+
+# ───────────── Optional modules ─────────────
+
+
+def test_new_workspaces_start_focused_and_admins_switch_modules(workspace, owner):
+    ws = workspace()
+    person = ws.add_person()
+    modules = ok(ws.admin.api.get("/api/auth/me"))["org"]["modules"]
+    assert modules["chat"] and modules["documents"] and modules["sprints"] and modules["client_access"]
+    assert not modules["time"] and not modules["portfolio"] and not modules["tests"]
+    fails(person.api.get("/api/admin/modules"), 403)
+    fails(person.api.put("/api/admin/modules", {"modules": {"time": True}}), 403)
+    fails(ws.admin.api.put("/api/admin/modules", {"modules": {"teleport": True}}), 422)
+    rows = ok(ws.admin.api.put("/api/admin/modules", {"modules": {"time": True, "chat": False}}))
+    state = {r["key"]: r["on"] for r in rows}
+    assert state["time"] is True and state["chat"] is False and state["documents"] is True
+    assert ok(person.api.get("/api/auth/me"))["org"]["modules"]["chat"] is False
+    # Hiding is per workspace: the platform owner's workspace keeps everything.
+    assert all(ok(owner.api.get("/api/auth/me"))["org"]["modules"].values())

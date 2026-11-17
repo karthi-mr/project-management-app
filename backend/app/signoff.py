@@ -24,8 +24,20 @@ STAGES = {"feature": FEATURE_STAGES, "milestone": MILESTONE_STAGES}
 APPROVER_ROLES = ("manager",)
 
 
+MODES = ("off", "simple", "strict")
+
+
+def mode(project: Project) -> str:
+    value = getattr(project, "signoff_mode", None) or ("strict" if project.signoff_required else "off")
+    return value if value in MODES else "strict"
+
+
 def gated(db: Session, project: Project) -> bool:
-    return bool(project.signoff_required) and has_feature(db, project.org_id, "approvals")
+    return mode(project) != "off" and has_feature(db, project.org_id, "approvals")
+
+
+def strict(project: Project) -> bool:
+    return mode(project) == "strict"
 
 
 def approvers(db: Session, project: Project) -> list[User]:
@@ -350,13 +362,17 @@ def set_stage(db: Session, project: Project, target_type: str, obj, stage: str, 
 
 
 def may_decide(db: Session, project: Project, approval: Approval, user: User) -> bool:
-    """Whether this person is the one (or one of those) who decides this request."""
-    if not is_approver(db, project, user):
+    """Whether this person decides this request. The same rule for every kind of approval:
+    the person it was sent to, or else the project owner or any manager; in strict mode not the
+    person who asked, unless nobody else can."""
+    if approval.status != "pending" or user.org_id != project.org_id:
         return False
     if approval.approver_id is not None:
         return approval.approver_id == user.id
-    if approval.requester_id == user.id:
-        # Your own request is decided by someone else, unless nobody else can.
+    if not is_approver(db, project, user):
+        return False
+    if approval.requester_id == user.id and strict(project):
+        # In strict mode your own request is decided by someone else, unless nobody else can.
         return not [a for a in approvers(db, project) if a.id != user.id]
     return True
 
@@ -488,7 +504,11 @@ def change_stage(db: Session, project: Project, user: User, target_type: str, ob
         return
     if step > 1:
         raise HTTPException(409, f"Stages are signed off one at a time. The next stage is {next_stage(target_type, obj.stage)}.")
-    # Forward always goes through a request that the owner or a manager approves.
+    if approver and not strict(project):
+        # Simple mode: an owner or manager signs the stage off in one step.
+        sign_off_now(db, project, user, target_type, obj)
+        return
+    # Strict mode, or someone who cannot approve: it goes through a request.
     raise HTTPException(409, f"The {obj.stage} stage needs an approved sign-off first. Request a sign-off; the owner or a manager approves it.")
 
 

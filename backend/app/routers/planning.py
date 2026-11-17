@@ -493,13 +493,7 @@ def pending_items(db: Session, user: User) -> list[dict]:
         if approval.project is None:
             continue
         # Addressed to me, or open to the owner and managers of a project where I am one.
-        if approval.kind == "stage":
-            if not signoff.may_decide(db, approval.project, approval, user):
-                continue
-        elif approval.approver_id != user.id and not (
-            approval.approver_id is None and approval.requester_id != user.id
-            and user.id in {a.id for a in signoff.approvers(db, approval.project)}
-        ):
+        if not signoff.may_decide(db, approval.project, approval, user):
             continue
         waited = (utcnow() - approval.created_at).days
         late = waited >= (approval.project.signoff_remind_days or 2)

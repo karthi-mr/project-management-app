@@ -52,6 +52,12 @@ export const RequestBadge = ({ status }) => {
   return <Badge color={meta.color}>{meta.label}</Badge>
 }
 
+/** True unless the workspace has switched this optional module off (Workspace settings). */
+export function useModule(key) {
+  const { user } = useAuth()
+  return user?.org?.modules?.[key] !== false
+}
+
 /** True when the workspace's plan includes a capability. */
 export function useFeature(feature) {
   const { user } = useAuth()

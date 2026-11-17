@@ -6,6 +6,7 @@ import { ChangePassword, ForgotPassword, Login, SetupTwoFactor, Signup } from '.
 import Billing from './pages/Billing'
 import Platform from './pages/Platform'
 import Support from './pages/Support'
+import WorkspaceSettings from './pages/WorkspaceSettings'
 import { Landing, Legal, SharedProject, StatusPage } from './pages/Public'
 import Dashboard from './pages/Dashboard'
 import Projects from './pages/Projects'
@@ -82,6 +83,7 @@ export default function App() {
           <Route element={<RequireAdmin />}>
             <Route path="users" element={<Users />} />
             <Route path="billing" element={<Billing />} />
+            <Route path="settings" element={<WorkspaceSettings />} />
           </Route>
           <Route element={<RequirePlatformOwner />}>
             <Route path="platform" element={<Platform />} />

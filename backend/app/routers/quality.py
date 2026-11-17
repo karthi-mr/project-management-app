@@ -497,6 +497,36 @@ def save_security(data: SecurityIn, request: Request, admin: User = Depends(requ
     return security_out(db, org)
 
 
+class ModulesIn(BaseModel):
+    modules: dict[str, bool]
+
+
+@router.get("/admin/modules")
+def read_modules(admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+    from ..saas import MODULES, hidden_modules
+
+    hidden = hidden_modules(get_org(db, admin))
+    return [{"key": key, "label": label, "on": key not in hidden} for key, label in MODULES.items()]
+
+
+@router.put("/admin/modules")
+def save_modules(data: ModulesIn, request: Request, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Show or hide optional parts of the app for everyone in the workspace."""
+    from ..saas import MODULES, hidden_modules
+
+    unknown = [k for k in data.modules if k not in MODULES]
+    if unknown:
+        raise HTTPException(422, f"Unknown module: {unknown[0]}")
+    org = get_org(db, admin)
+    hidden = hidden_modules(org)
+    for key, on in data.modules.items():
+        (hidden.discard if on else hidden.add)(key)
+    org.hidden_modules = ",".join(k for k in MODULES if k in hidden)
+    audit(db, admin, "workspace.modules", ", ".join(sorted(hidden)) or "everything shown", request)
+    db.commit()
+    return read_modules(admin, db)
+
+
 @router.post("/admin/sessions/{session_id}/end", status_code=204)
 def end_session(session_id: int, request: Request, admin: User = Depends(require_admin), db: Session = Depends(get_db)):
     s = db.get(UserSession, session_id)

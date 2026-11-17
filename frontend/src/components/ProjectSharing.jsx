@@ -4,6 +4,7 @@ import { api, notifyChanged } from '../api'
 import { useConfirm, useToast } from '../context'
 import { Badge, FEATURE_STAGES, Field, MILESTONE_STAGES, Modal, Spinner, formatDate, timeAgo } from '../ui'
 import { useFeature } from './License'
+import SignoffModePicker from './SignoffModePicker'
 
 /* Project settings: the sign-off rule, and read-only links for clients. */
 
@@ -14,11 +15,12 @@ export function SignoffCard({ project, reload }) {
   const managers = project.members.filter((m) => m.role === 'manager')
   const owner = project.members.find((m) => m.role === 'owner')
 
-  const toggle = async () => {
+  const setMode = async (signoff_mode) => {
+    if (signoff_mode === project.signoff_mode) return
     setBusy(true)
     try {
-      await api(`/projects/${project.id}`, { method: 'PATCH', body: { signoff_required: !project.signoff_required } })
-      toast(project.signoff_required ? 'Stages can now be changed freely' : 'Every stage now needs a sign-off')
+      await api(`/projects/${project.id}`, { method: 'PATCH', body: { signoff_mode } })
+      toast(signoff_mode === 'off' ? 'Stages can now be changed freely' : `Stage sign-off is now ${signoff_mode}`)
       notifyChanged()
       reload()
     } catch (err) {
@@ -31,26 +33,23 @@ export function SignoffCard({ project, reload }) {
     <div className="card card-pad stack">
       <div className="row between row-wrap">
         <h2 className="icon-label"><ShieldCheck size={17} /> <span>Stage sign-off</span></h2>
-        <label className="opt-row">
-          <input type="checkbox" checked={project.signoff_required} disabled={busy || !project.can_manage} onChange={toggle} />
-          Require a sign-off for every stage
-        </label>
       </div>
-      <p className="muted small">
-        Every feature and every milestone moves through its stages one at a time. A stage is finished when the
-        project owner or a manager approves a sign-off request for it. Nobody moves a stage without that approval,
-        not even the owner, and nobody can skip a stage. A request you sent yourself is approved by someone else,
-        unless you are the only one who can approve. Only the owner or a manager can move something back.
-      </p>
+      <SignoffModePicker value={project.signoff_mode} onChange={setMode} disabled={busy || !project.can_manage} />
+      {project.signoff_mode !== 'off' && (
+        <p className="muted small">
+          Features and milestones move one stage at a time and nobody skips a stage. Only the owner or a manager can move
+          something back. All approvals in this project, stage sign-offs or otherwise, follow the same rule.
+        </p>
+      )}
       <div className="small">
         <b>Who can sign off:</b> {owner ? owner.full_name : 'the owner'} (owner)
         {managers.length ? `, ${managers.map((m) => m.full_name).join(', ')} (manager)` : '. Give a member the Manager role on the Team tab to add more.'}
       </div>
-      {!hasApprovals && project.signoff_required && (
+      {!hasApprovals && project.signoff_mode !== 'off' && (
         <div className="small danger-text">Your plan does not include approvals, so this rule is not enforced right now.</div>
       )}
-      {project.can_manage && <Reminders project={project} reload={reload} />}
-      <Criteria project={project} />
+      {project.signoff_mode !== 'off' && project.can_manage && <Reminders project={project} reload={reload} />}
+      {project.signoff_mode !== 'off' && <Criteria project={project} />}
     </div>
   )
 }

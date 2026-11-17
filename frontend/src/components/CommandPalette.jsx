@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Building2,
   CreditCard,
+  Settings2,
   LifeBuoy,
   Briefcase,
   CalendarDays,
@@ -144,19 +145,20 @@ export default function CommandPalette({ open, setOpen, onToggleSidebar }) {
       setOpen(false)
       fn()
     }
+    const mod = user.org?.modules || {}
     const pages = [
       { icon: LayoutDashboard, label: 'Dashboard', hint: 'G D', to: '/' },
       { icon: FolderKanban, label: 'Projects', hint: 'G P', to: '/projects' },
       { icon: GanttChart, label: 'Roadmap', hint: 'G R', to: '/roadmap' },
       { icon: CalendarDays, label: 'Calendar', hint: 'G C', to: '/calendar' },
       { icon: ListChecks, label: 'My issues', hint: 'G I', to: '/my-issues' },
-      { icon: Clock, label: 'Timesheet', hint: 'G T', to: '/timesheet' },
-      { icon: Briefcase, label: 'Portfolio', hint: 'G O', to: '/portfolio' },
-      { icon: Gauge, label: 'Workload', hint: 'G W', to: '/workload' },
+      ...(mod.time === false ? [] : [{ icon: Clock, label: 'Timesheet', hint: 'G T', to: '/timesheet' }]),
+      ...(mod.portfolio === false ? [] : [{ icon: Briefcase, label: 'Portfolio', hint: 'G O', to: '/portfolio' }]),
+      ...(mod.workload === false ? [] : [{ icon: Gauge, label: 'Workload', hint: 'G W', to: '/workload' }]),
       { icon: Trash2, label: 'Recycle bin', to: '/trash' },
-      { icon: MessagesSquare, label: 'Chat', hint: 'G M', to: '/chat' },
+      ...(mod.chat === false ? [] : [{ icon: MessagesSquare, label: 'Chat', hint: 'G M', to: '/chat' }]),
       { icon: UserRound, label: 'Profile and appearance', to: '/profile' },
-      ...(user.role === 'admin' ? [{ icon: Users, label: 'Users', to: '/users' }, { icon: CreditCard, label: 'Billing and license', to: '/billing' }] : []),
+      ...(user.role === 'admin' ? [{ icon: Users, label: 'Users', to: '/users' }, { icon: Settings2, label: 'Workspace settings', to: '/settings' }, { icon: CreditCard, label: 'Billing and license', to: '/billing' }] : []),
       { icon: LifeBuoy, label: 'Help and support', to: '/support' },
       ...(user.is_platform_admin ? [{ icon: Building2, label: 'Owner console', to: '/platform' }] : []),
     ]
@@ -189,7 +191,7 @@ export default function CommandPalette({ open, setOpen, onToggleSidebar }) {
         items: actions.filter((a) => match(a.label)).map((a) => ({ key: a.label, node: <a.icon size={16} />, label: a.label, hint: a.hint, run: run(a.action) })),
       },
     ].filter((s) => s.items.length)
-  }, [query, projects, issues, user.role, navigate, openIssue, logout, setTheme, setOpen, onToggleSidebar])
+  }, [query, projects, issues, user.role, user.org, navigate, openIssue, logout, setTheme, setOpen, onToggleSidebar])
 
   const flat = sections.flatMap((s) => s.items)
 

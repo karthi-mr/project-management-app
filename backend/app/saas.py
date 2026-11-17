@@ -89,6 +89,29 @@ DEFAULT_SETTINGS = {
 
 GRACE_WARNING_DAYS = 7
 
+# Parts of the app a workspace can switch off to keep things simple. Projects, features, milestones,
+# issues, releases, the board and the calendar are always there. Switching a module off only hides it;
+# nothing is deleted, and switching it back on shows everything again.
+MODULES = {
+    "sprints": "Sprints",
+    "tests": "Test cases",
+    "documents": "Documents",
+    "risks": "Risks",
+    "time": "Time tracking and timesheets",
+    "budgets": "Budgets and costs",
+    "portfolio": "Portfolio",
+    "workload": "Workload",
+    "chat": "Chat",
+    "automation": "Automation rules",
+    "client_access": "Client links and feedback",
+}
+# A new workspace starts focused on planning and delivery; the rest is one switch away.
+NEW_WORKSPACE_HIDDEN = ("tests", "risks", "time", "budgets", "portfolio", "workload", "automation")
+
+
+def hidden_modules(org) -> set[str]:
+    return {m for m in (org.hidden_modules or "").split(",") if m in MODULES}
+
 
 # ───────────── Settings ─────────────
 
@@ -184,6 +207,7 @@ def org_out(db: Session, org: Organization, private: bool = False) -> dict:
         "read_only": status in ("expired", "suspended"),
         "usage": usage(db, org.id),
         "license_key": org.license_key,
+        "modules": {key: key not in hidden_modules(org) for key in MODULES},
         "billing_email": org.billing_email,
         "logo_url": org.logo_url,
         "brand_color": org.brand_color,
@@ -318,6 +342,7 @@ def create_organization(db: Session, name: str, settings: dict | None = None) ->
         seats=trial.max_users if trial else 5,
         is_trial=True,
         valid_until=utcnow() + timedelta(days=days),
+        hidden_modules=",".join(NEW_WORKSPACE_HIDDEN),
     )
     db.add(org)
     db.flush()

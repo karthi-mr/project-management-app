@@ -1,5 +1,6 @@
 """Sign-up and workspace billing. Payment is manual: a workspace requests a plan, pays by bank
 transfer and the platform owner activates the license (see routers/platform.py)."""
+import os
 import re
 import secrets
 import time
@@ -33,7 +34,7 @@ AVATAR_COLORS = ["#6366f1", "#8b5cf6", "#ec4899", "#f43f5e", "#f97316", "#eab308
 
 # Simple abuse guard for the public sign-up form: a handful of workspaces per address per hour.
 RESERVED_SLUGS = {"www", "app", "api", "admin", "login", "signup", "platform", "billing", "support", "share", "welcome"}
-SIGNUPS_PER_HOUR = 5
+SIGNUPS_PER_HOUR = int(os.getenv("PM_SIGNUPS_PER_HOUR", "5"))  # raised only for automated browser tests
 _signups: dict[str, list[float]] = {}
 
 

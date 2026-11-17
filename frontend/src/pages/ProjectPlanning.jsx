@@ -4,7 +4,7 @@ import { api, notifyChanged } from '../api'
 import { useConfirm, useToast } from '../context'
 import { PhaseChecklist } from './ProjectExtras'
 import { BudgetCard } from './Insights'
-import { useFeature } from '../components/License'
+import { useFeature, useModule } from '../components/License'
 import {
   Avatar,
   Badge,
@@ -41,7 +41,7 @@ const hours = (n) => `${Math.round(n * 10) / 10}h`
 export function Overview({ project, issues, milestones, features, releases, risks, checks, setTab, reload }) {
   const toast = useToast()
   const confirm = useConfirm()
-  const hasBudgets = useFeature('budgets')
+  const hasBudgets = useFeature('budgets') && useModule('budgets')
   const highRisks = risks.filter((r) => r.severity === 'high' && ['open', 'occurred'].includes(r.status))
   const today = todayDay()
   const phaseIndex = Math.max(0, PHASES.findIndex((p) => p.key === project.phase))

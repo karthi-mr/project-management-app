@@ -365,6 +365,13 @@ export const PHASES = [
   { key: 'live', label: 'Live', hint: 'In production and being maintained' },
 ]
 
+/* How strictly features and milestones move through their stages (see backend signoff.py). */
+export const SIGNOFF_MODES = [
+  { key: 'off', label: 'Off', hint: 'Anyone who can edit moves stages freely. Good for small teams.' },
+  { key: 'simple', label: 'Simple', hint: 'The owner and managers sign a stage off in one click; others ask them.' },
+  { key: 'strict', label: 'Strict', hint: 'Every stage needs a request approved by the owner or a manager, never by the person who asked.' },
+]
+
 export const MILESTONE_STAGES = [
   { key: 'planned', label: 'Planned', color: '#3b82f6' },
   { key: 'design', label: 'Design', color: '#a855f7' },

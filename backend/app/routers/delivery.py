@@ -393,8 +393,16 @@ class DecisionIn(BaseModel):
     note: str = Field(default="", max_length=5000)
 
 
-def approval_out(a: Approval) -> dict:
+KIND_LABELS = {
+    "stage": "Stage sign-off", "phase": "Project phase", "feature": "Feature", "release": "Release go-live",
+    "general": "Other approval",
+}
+
+
+def approval_out(a: Approval, can_decide: bool | None = None) -> dict:
     return {
+        "kind_label": KIND_LABELS.get(a.kind, a.kind),
+        "can_decide": can_decide,
         "id": a.id,
         "project_id": a.project_id,
         "project_name": a.project.name if a.project else None,
@@ -418,9 +426,9 @@ def approval_out(a: Approval) -> dict:
 
 @router.get("/projects/{project_id}/approvals")
 def list_approvals(project_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    get_project(db, project_id, user)
+    project = get_project(db, project_id, user)
     rows = db.scalars(select(Approval).where(Approval.project_id == project_id).order_by(Approval.status != "pending", Approval.created_at.desc())).all()
-    return [approval_out(a) for a in rows]
+    return [approval_out(a, signoff.may_decide(db, project, a, user)) for a in rows]
 
 
 @router.get("/approvals/mine")
@@ -433,13 +441,11 @@ def my_approvals(user: User = Depends(get_current_user), db: Session = Depends(g
     ).all()
     mine = []
     for a in rows:
-        if a.project is None:
+        if a.project is None or a.project.org_id != user.org_id:
             continue
-        open_to_me = a.approver_id is None and signoff.is_approver(db, a.project, user) and (
-            user.role != "admin" or a.project.owner_id == user.id or any(m.id == user.id for m in a.project.members)
-        )
-        if a.approver_id == user.id or a.requester_id == user.id or open_to_me:
-            mine.append(approval_out(a))
+        can = signoff.may_decide(db, a.project, a, user)
+        if can or a.requester_id == user.id:
+            mine.append(approval_out(a, can))
     return mine
 
 
@@ -512,22 +518,22 @@ def decide(approval_id: int, data: DecisionIn, user: User = Depends(get_current_
     if approval.kind == "stage":
         signoff.decide(db, project, approval, user, data.decision, data.note.strip())
         db.commit()
-        return approval_out(approval)
-    if approval.approver_id is None:
-        if not signoff.is_approver(db, project, user):
-            raise HTTPException(403, "Only the project owner or a project manager can decide")
-        if approval.requester_id == user.id:
-            raise HTTPException(403, "Someone other than the requester has to decide")
-        approval.approver_id = user.id
-    elif approval.approver_id != user.id:
-        raise HTTPException(403, "Only the person asked can decide")
+        return approval_out(approval, False)
+    # Every other kind follows the same rule as stage sign-offs.
+    if not signoff.may_decide(db, project, approval, user):
+        if approval.approver_id is not None:
+            raise HTTPException(403, f"This request was sent to {approval.approver.full_name if approval.approver else 'someone else'}")
+        if approval.requester_id == user.id and signoff.is_approver(db, project, user):
+            raise HTTPException(403, "You asked for this, so the owner or another manager has to approve it")
+        raise HTTPException(403, "Only the project owner or a project manager can decide")
+    approval.approver_id = user.id
     approval.status = data.decision
     approval.decision_note = data.note.strip()
     approval.decided_at = utcnow()
     log_activity(db, approval.project_id, user, f"{data.decision} “{approval.title}”")
     notify(db, approval.requester_id, user, f"{data.decision} your request: {approval.title}", approval.project_id)
     db.commit()
-    return approval_out(approval)
+    return approval_out(approval, False)
 
 
 class SignoffIn(BaseModel):
@@ -535,6 +541,7 @@ class SignoffIn(BaseModel):
     target_id: int
     note: str = Field(default="", max_length=5000)
     approver_id: int | None = None  # None = the owner and every manager; the first to answer decides
+    approve: bool = False  # simple mode: an owner or manager signs off straight away
 
 
 @router.post("/projects/{project_id}/signoffs", status_code=201)
@@ -547,7 +554,10 @@ def request_signoff(project_id: int, data: SignoffIn, user: User = Depends(get_c
     obj = db.get(model, data.target_id, with_for_update=True)
     if not obj or obj.project_id != project.id:
         raise HTTPException(404, "Not found in this project")
-    approval = signoff.request(db, project, user, data.target_type, obj, data.note.strip(), data.approver_id)
+    if data.approve and not signoff.strict(project) and signoff.is_approver(db, project, user):
+        approval = signoff.sign_off_now(db, project, user, data.target_type, obj, data.note.strip())
+    else:
+        approval = signoff.request(db, project, user, data.target_type, obj, data.note.strip(), data.approver_id)
     db.commit()
     return approval_out(approval)
 

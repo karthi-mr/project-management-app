@@ -8,6 +8,7 @@ import {
   X,
   Building2,
   CreditCard,
+  Settings2,
   Check,
   Clock,
   Gauge,
@@ -150,6 +151,7 @@ export default function Layout() {
     })
   }, [])
   const isAdmin = user.role === 'admin'
+  const mod = user.org?.modules || {}
   const t = useT()
 
   // Language and time zone: the person's own choice, else the workspace's time zone.
@@ -267,23 +269,36 @@ export default function Layout() {
         <NavLink to="/my-issues" className={navClass} title={collapsed ? "My issues" : undefined}>
           <ListChecks size={17} /> <span className="nav-label">{t('nav.myIssues')}</span>
         </NavLink>
-        <NavLink to="/portfolio" className={navClass} title={collapsed ? "Portfolio" : undefined}>
-          <Briefcase size={17} /> <span className="nav-label">{t('nav.portfolio')}</span>
-        </NavLink>
-        <NavLink to="/workload" className={navClass} title={collapsed ? "Workload" : undefined}>
-          <Gauge size={17} /> <span className="nav-label">{t('nav.workload')}</span>
-        </NavLink>
-        <NavLink to="/timesheet" className={navClass} title={collapsed ? "Timesheet" : undefined}>
-          <Clock size={17} /> <span className="nav-label">{t('nav.timesheet')}</span>
-        </NavLink>
-        <NavLink to="/chat" className={navClass} title={collapsed ? "Chat" : undefined}>
-          <MessagesSquare size={17} /> <span className="nav-label">{t('nav.chat')}</span>
-          {chatUnread > 0 && <span className="count" title="Unread messages">{chatUnread > 99 ? '99+' : chatUnread}</span>}
-        </NavLink>
+        {mod.portfolio !== false && (
+          <NavLink to="/portfolio" className={navClass} title={collapsed ? "Portfolio" : undefined}>
+            <Briefcase size={17} /> <span className="nav-label">{t('nav.portfolio')}</span>
+          </NavLink>
+        )}
+        {mod.workload !== false && (
+          <NavLink to="/workload" className={navClass} title={collapsed ? "Workload" : undefined}>
+            <Gauge size={17} /> <span className="nav-label">{t('nav.workload')}</span>
+          </NavLink>
+        )}
+        {mod.time !== false && (
+          <NavLink to="/timesheet" className={navClass} title={collapsed ? "Timesheet" : undefined}>
+            <Clock size={17} /> <span className="nav-label">{t('nav.timesheet')}</span>
+          </NavLink>
+        )}
+        {mod.chat !== false && (
+          <NavLink to="/chat" className={navClass} title={collapsed ? "Chat" : undefined}>
+            <MessagesSquare size={17} /> <span className="nav-label">{t('nav.chat')}</span>
+            {chatUnread > 0 && <span className="count" title="Unread messages">{chatUnread > 99 ? '99+' : chatUnread}</span>}
+          </NavLink>
+        )}
         {isAdmin && (
           <NavLink to="/users" className={navClass} title={collapsed ? "Users" : undefined}>
             <Users size={17} /> <span className="nav-label">{t('nav.users')}</span>
             {pendingResets > 0 && <span className="count" title="Pending password reset requests">{pendingResets}</span>}
+          </NavLink>
+        )}
+        {isAdmin && (
+          <NavLink to="/settings" className={navClass} title={collapsed ? 'Workspace settings' : undefined}>
+            <Settings2 size={17} /> <span className="nav-label">{t('nav.settings')}</span>
           </NavLink>
         )}
         {isAdmin && (

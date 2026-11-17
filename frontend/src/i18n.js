@@ -27,6 +27,7 @@ const en = {
   'nav.chat': 'Chat',
   'nav.users': 'Users',
   'nav.billing': 'Billing',
+  'nav.settings': 'Workspace settings',
   'nav.support': 'Help and support',
   'nav.owner': 'Owner console',
   'nav.trash': 'Recycle bin',
@@ -71,7 +72,7 @@ const dictionaries = {
   hi: {
     'nav.dashboard': 'डैशबोर्ड', 'nav.projects': 'प्रोजेक्ट', 'nav.roadmap': 'रोडमैप', 'nav.calendar': 'कैलेंडर',
     'nav.myIssues': 'मेरे कार्य', 'nav.portfolio': 'पोर्टफोलियो', 'nav.workload': 'कार्यभार', 'nav.timesheet': 'टाइमशीट',
-    'nav.chat': 'चैट', 'nav.users': 'उपयोगकर्ता', 'nav.billing': 'बिलिंग', 'nav.support': 'सहायता', 'nav.owner': 'ओनर कंसोल',
+    'nav.chat': 'चैट', 'nav.users': 'उपयोगकर्ता', 'nav.billing': 'बिलिंग', 'nav.settings': 'वर्कस्पेस सेटिंग्स', 'nav.support': 'सहायता', 'nav.owner': 'ओनर कंसोल',
     'nav.trash': 'रीसायकल बिन', 'nav.collapse': 'छोटा करें', 'nav.signOut': 'साइन आउट',
     'top.search': 'प्रोजेक्ट खोजें…', 'top.commands': 'कमांड',
     'auth.welcome': 'वापसी पर स्वागत है', 'auth.welcomeSub': 'अपने प्रोजेक्ट आगे बढ़ाने के लिए साइन इन करें।',
@@ -88,7 +89,7 @@ const dictionaries = {
   ta: {
     'nav.dashboard': 'முகப்பு', 'nav.projects': 'திட்டங்கள்', 'nav.roadmap': 'வழித்திட்டம்', 'nav.calendar': 'நாட்காட்டி',
     'nav.myIssues': 'என் பணிகள்', 'nav.portfolio': 'போர்ட்ஃபோலியோ', 'nav.workload': 'பணிச்சுமை', 'nav.timesheet': 'நேரப்பதிவு',
-    'nav.chat': 'அரட்டை', 'nav.users': 'பயனர்கள்', 'nav.billing': 'கட்டணம்', 'nav.support': 'உதவி', 'nav.owner': 'உரிமையாளர் பலகம்',
+    'nav.chat': 'அரட்டை', 'nav.users': 'பயனர்கள்', 'nav.billing': 'கட்டணம்', 'nav.settings': 'பணியிட அமைப்புகள்', 'nav.support': 'உதவி', 'nav.owner': 'உரிமையாளர் பலகம்',
     'nav.trash': 'மறுசுழற்சி தொட்டி', 'nav.collapse': 'சுருக்கு', 'nav.signOut': 'வெளியேறு',
     'top.search': 'திட்டங்களைத் தேடு…', 'top.commands': 'கட்டளைகள்',
     'auth.welcome': 'மீண்டும் வரவேற்கிறோம்', 'auth.welcomeSub': 'உங்கள் திட்டங்களைத் தொடர உள்நுழையவும்.',
@@ -105,7 +106,7 @@ const dictionaries = {
   es: {
     'nav.dashboard': 'Panel', 'nav.projects': 'Proyectos', 'nav.roadmap': 'Hoja de ruta', 'nav.calendar': 'Calendario',
     'nav.myIssues': 'Mis tareas', 'nav.portfolio': 'Cartera', 'nav.workload': 'Carga de trabajo', 'nav.timesheet': 'Horas',
-    'nav.chat': 'Chat', 'nav.users': 'Usuarios', 'nav.billing': 'Facturación', 'nav.support': 'Ayuda y soporte', 'nav.owner': 'Consola del propietario',
+    'nav.chat': 'Chat', 'nav.users': 'Usuarios', 'nav.billing': 'Facturación', 'nav.settings': 'Ajustes del espacio', 'nav.support': 'Ayuda y soporte', 'nav.owner': 'Consola del propietario',
     'nav.trash': 'Papelera', 'nav.collapse': 'Contraer', 'nav.signOut': 'Cerrar sesión',
     'top.search': 'Buscar proyectos…', 'top.commands': 'Comandos',
     'auth.welcome': 'Bienvenido de nuevo', 'auth.welcomeSub': 'Inicia sesión para seguir con tus proyectos.',
@@ -122,7 +123,7 @@ const dictionaries = {
   fr: {
     'nav.dashboard': 'Tableau de bord', 'nav.projects': 'Projets', 'nav.roadmap': 'Feuille de route', 'nav.calendar': 'Calendrier',
     'nav.myIssues': 'Mes tâches', 'nav.portfolio': 'Portefeuille', 'nav.workload': 'Charge de travail', 'nav.timesheet': 'Feuille de temps',
-    'nav.chat': 'Discussion', 'nav.users': 'Utilisateurs', 'nav.billing': 'Facturation', 'nav.support': 'Aide et support', 'nav.owner': 'Console propriétaire',
+    'nav.chat': 'Discussion', 'nav.users': 'Utilisateurs', 'nav.billing': 'Facturation', 'nav.settings': "Paramètres de l'espace", 'nav.support': 'Aide et support', 'nav.owner': 'Console propriétaire',
     'nav.trash': 'Corbeille', 'nav.collapse': 'Réduire', 'nav.signOut': 'Se déconnecter',
     'top.search': 'Rechercher des projets…', 'top.commands': 'Commandes',
     'auth.welcome': 'Bon retour', 'auth.welcomeSub': 'Connectez-vous pour faire avancer vos projets.',
@@ -139,7 +140,7 @@ const dictionaries = {
   de: {
     'nav.dashboard': 'Übersicht', 'nav.projects': 'Projekte', 'nav.roadmap': 'Roadmap', 'nav.calendar': 'Kalender',
     'nav.myIssues': 'Meine Aufgaben', 'nav.portfolio': 'Portfolio', 'nav.workload': 'Auslastung', 'nav.timesheet': 'Zeiterfassung',
-    'nav.chat': 'Chat', 'nav.users': 'Benutzer', 'nav.billing': 'Abrechnung', 'nav.support': 'Hilfe und Support', 'nav.owner': 'Betreiberkonsole',
+    'nav.chat': 'Chat', 'nav.users': 'Benutzer', 'nav.billing': 'Abrechnung', 'nav.settings': 'Arbeitsbereich-Einstellungen', 'nav.support': 'Hilfe und Support', 'nav.owner': 'Betreiberkonsole',
     'nav.trash': 'Papierkorb', 'nav.collapse': 'Einklappen', 'nav.signOut': 'Abmelden',
     'top.search': 'Projekte suchen…', 'top.commands': 'Befehle',
     'auth.welcome': 'Willkommen zurück', 'auth.welcomeSub': 'Melden Sie sich an, um Ihre Projekte voranzubringen.',

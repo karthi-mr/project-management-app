@@ -32,6 +32,7 @@ from ..models import (
 from ..saas import check_project_available, get_org
 from ..templates import DEFAULT_PHASE_CHECKS, add_phase_checks, apply_template
 from ..security import get_current_user
+from .. import signoff as signoff_module
 from ..serializers import activity_out, milestone_out, project_out, user_brief
 
 router = APIRouter(prefix="/api", tags=["projects"])
@@ -52,6 +53,7 @@ class ProjectCreate(BaseModel):
     due_date: date | None = None
     member_ids: list[int] = []
     template_id: int | None = None
+    signoff_mode: Literal["off", "simple", "strict"] = "simple"
 
 
 class ProjectUpdate(BaseModel):
@@ -60,7 +62,8 @@ class ProjectUpdate(BaseModel):
     status: ProjectStatus | None = None
     phase: ProjectPhase | None = None
     logo_url: str | None = Field(default=None, max_length=200)
-    signoff_required: bool | None = None
+    signoff_required: bool | None = None  # older clients: True = strict, False = off
+    signoff_mode: Literal["off", "simple", "strict"] | None = None
     signoff_remind_days: int | None = Field(default=None, ge=1, le=60)
     signoff_escalate_days: int | None = Field(default=None, ge=1, le=120)
     budget: float | None = Field(default=None, ge=0, le=1e12)
@@ -207,6 +210,7 @@ def _out(db: Session, project: Project, user: User) -> dict:
         "can_edit": acc["can_edit"],
         "can_approve": acc["can_approve"],
         "signoff_required": bool(project.signoff_required),
+        "signoff_mode": signoff.mode(project),
         "signoff_remind_days": project.signoff_remind_days or 2,
         "signoff_escalate_days": project.signoff_escalate_days or 5,
         "signoff_gated": signoff.gated(db, project),
@@ -285,6 +289,8 @@ def create_project(
         start_date=data.start_date,
         due_date=data.due_date,
         owner_id=user.id,
+        signoff_mode=data.signoff_mode,
+        signoff_required=data.signoff_mode != "off",
     )
     member_ids = set(data.member_ids) | {user.id}
     project.members = list(
@@ -330,7 +336,7 @@ def update_project(
         from ..saas import require_feature
 
         require_feature(db, user, "budgets")
-    for name in ("name", "description", "status", "phase", "color", "currency", "signoff_required", "signoff_remind_days", "signoff_escalate_days"):
+    for name in ("name", "description", "status", "phase", "color", "currency", "signoff_required", "signoff_mode", "signoff_remind_days", "signoff_escalate_days"):
         if fields.get(name) is None:
             fields.pop(name, None)
     if fields.get("logo_url") and not fields["logo_url"].startswith("/api/files/"):
@@ -339,6 +345,13 @@ def update_project(
         log_activity(db, project.id, user, f"moved the project to the {fields['phase']} phase")
     if fields.get("status") and fields["status"] != project.status:
         log_activity(db, project.id, user, f"changed project status to {fields['status'].replace('_', ' ')}")
+    # The mode and the older on/off flag always agree.
+    if "signoff_mode" in fields:
+        fields["signoff_required"] = fields["signoff_mode"] != "off"
+    elif "signoff_required" in fields:
+        fields["signoff_mode"] = "strict" if fields["signoff_required"] else "off"
+    if "signoff_mode" in fields and fields["signoff_mode"] != signoff_module.mode(project):
+        log_activity(db, project.id, user, f"set stage sign-off to {fields['signoff_mode']}")
     for name, value in fields.items():
         setattr(project, name, value.strip() if name == "name" else value)
     if project.start_date and project.due_date and project.due_date < project.start_date:

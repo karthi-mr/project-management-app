@@ -111,7 +111,7 @@ def test_recycle_bin_restores_deleted_work(workspace):
 def test_milestones_and_releases(workspace):
     ws = workspace()
     project = ws.project()
-    ok(ws.admin.api.patch(f"/api/projects/{project['id']}", {"signoff_required": False}))
+    ok(ws.admin.api.patch(f"/api/projects/{project['id']}", {"signoff_mode": "off"}))
     milestone = ok(ws.admin.api.post(f"/api/projects/{project['id']}/milestones", {"name": "v1", "start_date": "2026-01-01", "due_date": "2026-02-01"}), 201)
     fails(ws.admin.api.post(f"/api/projects/{project['id']}/milestones", {"name": "bad", "start_date": "2026-02-01", "due_date": "2026-01-01"}), 422)
     assert ok(ws.admin.api.patch(f"/api/milestones/{milestone['id']}", {"status": "closed"}))["status"] == "closed"
