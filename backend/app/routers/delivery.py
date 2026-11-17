@@ -385,7 +385,7 @@ class ApprovalIn(BaseModel):
     phase: Literal["planning", "design", "development", "testing", "deployment", "live"] | None = None
     title: str = Field(default="", max_length=200)
     note: str = Field(default="", max_length=5000)
-    approver_id: int | None = None  # None = the owner or any manager may decide
+    # Every request goes to the project owner and all managers; the first to decide settles it.
 
 
 class DecisionIn(BaseModel):
@@ -453,14 +453,8 @@ def my_approvals(user: User = Depends(get_current_user), db: Session = Depends(g
 def request_approval(project_id: int, data: ApprovalIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     project = get_project(db, project_id, user)
     require_feature(db, user, "approvals")
-    approver = None
-    if data.approver_id is not None:
-        approver = db.get(User, data.approver_id)
-        if not approver or not approver.is_active or approver.id not in {a.id for a in signoff.approvers(db, project)}:
-            raise HTTPException(422, "Approval requests go to the project owner or a project manager")
-        if approver.id == user.id:
-            raise HTTPException(422, "Ask someone else to approve")
-    elif not [a for a in signoff.approvers(db, project) if a.id != user.id]:
+    approver = None  # every request goes to the owner and all managers
+    if not [a for a in signoff.approvers(db, project) if a.id != user.id]:
         raise HTTPException(422, "There is nobody else who can approve. Add a manager to the project first.")
     title = data.title.strip()
     if data.kind == "feature":
@@ -540,7 +534,7 @@ class SignoffIn(BaseModel):
     target_type: Literal["feature", "module", "milestone"]
     target_id: int
     note: str = Field(default="", max_length=5000)
-    approver_id: int | None = None  # None = the owner and every manager; the first to answer decides
+    # The request goes to the owner and every manager; the first to answer decides.
     approve: bool = False  # simple mode: an owner or manager signs off straight away
 
 
@@ -559,7 +553,7 @@ def request_signoff(project_id: int, data: SignoffIn, user: User = Depends(get_c
     if data.approve and not signoff.strict(project) and signoff.is_approver(db, project, user):
         approval = signoff.sign_off_now(db, project, user, data.target_type, obj, data.note.strip())
     else:
-        approval = signoff.request(db, project, user, data.target_type, obj, data.note.strip(), data.approver_id)
+        approval = signoff.request(db, project, user, data.target_type, obj, data.note.strip())
     db.commit()
     return approval_out(approval)
 

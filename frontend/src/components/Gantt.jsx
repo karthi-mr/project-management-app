@@ -203,10 +203,10 @@ export default function Gantt({ rows, links = [], onReschedule, heading = 'Item'
               const hasBar = start != null && end != null
               const dragging = drag?.key === row.key && drag.moved
               return (
-                <div key={row.key} className={`gantt-row is-${row.kind} ${row.indent ? 'indent' : ''}`} style={{ height: ROW }}>
+                <div key={row.key} className={`gantt-row is-${row.kind} ${row.indent ? 'indent' : ''} ${row.depth != null ? `depth-${Math.min(row.depth, 3)}` : ''}`} style={{ height: ROW }}>
                   <div
                     className={`gantt-side ${row.onClick ? 'clickable' : ''}`}
-                    style={{ width: SIDE }}
+                    style={{ width: SIDE, ...(row.depth != null ? { paddingLeft: 14 + Math.max(0, row.depth) * 18 } : {}) }}
                     onClick={row.onClick}
                     title={row.title}
                   >

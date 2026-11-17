@@ -80,6 +80,7 @@ export default function ProjectDetail() {
   const [issues, setIssues] = useState([])
   const [milestones, setMilestones] = useState([])
   const [features, setFeatures] = useState([])
+  const [modules, setModules] = useState([])
   const [releases, setReleases] = useState([])
   const [risks, setRisks] = useState([])
   const [checks, setChecks] = useState([])
@@ -114,18 +115,20 @@ export default function ProjectDetail() {
       const p = await api(`/projects/${projectId}`)
       // Only ask for the sections this person may see; a refusal never blocks the page.
       const part = (section, path) => (p.sections.includes(section) ? api(path).catch(() => []) : Promise.resolve([]))
-      const [i, m, f, r, rk, ck] = await Promise.all([
+      const [i, m, f, r, rk, ck, md] = await Promise.all([
         part('issues', `/issues?project_id=${projectId}&limit=1000`),
         part('milestones', `/projects/${projectId}/milestones`),
         part('features', `/projects/${projectId}/features`),
         part('releases', `/projects/${projectId}/releases`),
         part('risks', `/projects/${projectId}/risks`),
         api(`/projects/${projectId}/phase-checks`).catch(() => []),
+        part('features', `/projects/${projectId}/modules`),
       ])
       setProject(p)
       setIssues(i)
       setMilestones(m)
       setFeatures(f)
+      setModules(md)
       setReleases(r)
       setRisks(rk)
       setChecks(ck)
@@ -256,14 +259,14 @@ export default function ProjectDetail() {
         </>
       )}
       {tab === 'overview' && (
-        <Overview project={project} issues={issues} milestones={milestones} features={features} releases={releases} risks={risks} checks={checks} setTab={setTab} reload={load} />
+        <Overview project={project} issues={issues} milestones={milestones} modules={modules} features={features} releases={releases} risks={risks} checks={checks} setTab={setTab} reload={load} />
       )}
       {tab === 'features' && (
         <Features project={project} features={features} onOpen={setFeatureParam} onCreate={() => setCreatingFeature(true)} />
       )}
       {tab === 'releases' && <Releases project={project} releases={releases} features={features} />}
       {tab === 'timeline' && (
-        <ProjectTimeline project={project} issues={issues} milestones={milestones} features={features} onCreate={() => setCreateStatus('todo')} />
+        <ProjectTimeline project={project} issues={issues} milestones={milestones} modules={modules} features={features} onCreate={() => setCreateStatus('todo')} onOpenFeature={setFeatureParam} />
       )}
       {tab === 'risks' && <Risks project={project} risks={risks} />}
       {tab === 'sprints' && <PlanGate feature="sprints"><Sprints project={project} /></PlanGate>}

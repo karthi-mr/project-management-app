@@ -197,6 +197,9 @@ def migrate(target: Engine | None = None) -> None:
                     conn.exec_driver_sql(f"CREATE UNIQUE INDEX {target} ON users (org_id, {column})")
         if "features" in tables:
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_features_module_id ON features (module_id)")
+        # Requests are no longer sent to one person: waiting ones go to the owner and all managers.
+        if "approvals" in tables:
+            conn.exec_driver_sql("UPDATE approvals SET approver_id = NULL WHERE status = 'pending' AND approver_id IS NOT NULL")
         # Time can be logged straight on a feature, so a time entry no longer always has an issue.
         if "time_entries" in tables:
             _issue_optional_on_time_entries(conn, dialect)

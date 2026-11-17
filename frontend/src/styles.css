@@ -1168,3 +1168,16 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 5px; border-radius: 5
 .module-picks { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; padding: 6px 10px; }
 .module-card .tag { cursor: default; }
 .module-card button.tag { cursor: pointer; border: 0; font: inherit; }
+
+/* ───────────── Lifecycle on the overview ───────────── */
+.stage-mix { display: flex; flex-direction: column; gap: 6px; }
+.stage-mix-head { display: flex; align-items: center; gap: 10px; }
+.stage-mix-head .icon-label { flex: 1; min-width: 0; }
+.stage-mix-bar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; gap: 2px; background: var(--surface-2); }
+.stage-mix-bar span { min-width: 6px; }
+.stage-mix-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--text-2); }
+.stage-mix-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+/* Nested timeline rows: milestone, then module, then feature, then issue. */
+.gantt-row.is-group.depth-1 .gantt-side { background: color-mix(in srgb, var(--surface-2) 60%, var(--surface)); font-weight: 600; }
+.gantt-row.is-group.depth-2 .gantt-side { background: var(--surface); font-weight: 550; }
+.gantt-row.is-group.depth-1, .gantt-row.is-group.depth-2 { background: transparent; }

@@ -414,7 +414,7 @@ export function RequestApprovalModal({ project, kind, targetId, phase, defaultTi
   const toast = useToast()
   // Approval requests go to the project owner and its managers only.
   const people = project.members.filter((m) => m.id !== user.id && (m.role === 'owner' || m.role === 'manager'))
-  const [form, setForm] = useState({ approver_id: '', title: defaultTitle, note: '' })
+  const [form, setForm] = useState({ title: defaultTitle, note: '' })
   const [busy, setBusy] = useState(false)
 
   const submit = async (e) => {
@@ -423,7 +423,7 @@ export function RequestApprovalModal({ project, kind, targetId, phase, defaultTi
     try {
       await api(`/projects/${project.id}/approvals`, {
         method: 'POST',
-        body: { kind, target_id: targetId ?? null, phase: phase ?? null, title: form.title, note: form.note, approver_id: form.approver_id ? Number(form.approver_id) : null },
+        body: { kind, target_id: targetId ?? null, phase: phase ?? null, title: form.title, note: form.note },
       })
       toast('Approval requested')
       notifyChanged()
@@ -441,12 +441,9 @@ export function RequestApprovalModal({ project, kind, targetId, phase, defaultTi
         <div className="modal-body">
           {people.length === 0 ? <p className="muted">Only the project owner and managers can approve, and nobody else has that role yet. Give a member the Manager role first.</p> : (
             <>
-              <Field label="Ask">
-                <select className="select" value={form.approver_id} onChange={(e) => setForm({ ...form, approver_id: e.target.value })}>
-                  <option value="">The owner or any manager (first to answer)</option>
-                  {people.map((m) => <option key={m.id} value={m.id}>{m.full_name} ({m.role})</option>)}
-                </select>
-              </Field>
+              <p className="small muted" style={{ marginTop: 0 }}>
+                Goes to {people.map((m) => m.full_name).join(', ')}. The first of them to decide settles it.
+              </p>
               <Field label="What needs approval" hint={kind === 'general' ? undefined : 'Leave empty for a standard title'}>
                 <input className="input" value={form.title} maxLength={200} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder={defaultTitle || 'e.g. Sign off the launch budget'} required={kind === 'general'} />
               </Field>
@@ -469,7 +466,6 @@ export function StageSignoff({ project, type, item, onChanged, compact = false, 
   const toast = useToast()
   const [deciding, setDeciding] = useState(null) // 'approved' | 'rejected' | 'request'
   const [note, setNote] = useState('')
-  const [askWho, setAskWho] = useState('')
   const [busy, setBusy] = useState(false)
   const stages = type === 'milestone' ? MILESTONE_STAGES : FEATURE_STAGES
   if (!project.signoff_gated) return null
@@ -495,7 +491,8 @@ export function StageSignoff({ project, type, item, onChanged, compact = false, 
       : project.can_approve && (!strictMode || pending.requester?.id !== user.id || others.length === 0)
   )
   const oneClick = !strictMode && project.can_approve
-  const askable = project.members.filter((m) => (project.approver_ids || []).includes(m.id) && m.id !== user.id)
+  // A request always goes to the owner and every manager; the first to decide settles it.
+  const approverNames = project.members.filter((m) => (project.approver_ids || []).includes(m.id) && m.id !== user.id).map((m) => m.full_name)
   const tick = async (c) => {
     try {
       await api('/signoff-checks', { method: 'POST', body: { criterion_id: c.id, target_id: item.id, done: !c.done } })
@@ -513,8 +510,8 @@ export function StageSignoff({ project, type, item, onChanged, compact = false, 
         await api(`/projects/${project.id}/signoffs`, { method: 'POST', body: { target_type: type, target_id: item.id, note, approve: true } })
         toast(`${current.label} signed off. Now in ${next.label}.`)
       } else if (deciding === 'request') {
-        await api(`/projects/${project.id}/signoffs`, { method: 'POST', body: { target_type: type, target_id: item.id, note, approver_id: askWho ? Number(askWho) : null } })
-        toast(askWho ? 'Sign-off requested' : 'Sign-off requested from the owner and managers')
+        await api(`/projects/${project.id}/signoffs`, { method: 'POST', body: { target_type: type, target_id: item.id, note } })
+        toast('Sign-off requested from the owner and all managers')
       } else {
         await api(`/approvals/${pending.id}/decide`, { method: 'POST', body: { decision: deciding, note } })
         toast(deciding === 'approved' ? `${current.label} signed off. Now in ${next.label}.` : 'Sign-off declined')
@@ -599,7 +596,7 @@ export function StageSignoff({ project, type, item, onChanged, compact = false, 
         oneClick ? (
           <button className="btn btn-sm" disabled={blocked} onClick={() => setDeciding('now')} title={blockedTitle || `Finish ${current.label} and move to ${next.label}`}><Check size={13} /> Sign off {current.label}</button>
         ) : canEdit ? (
-          <button className="btn btn-sm" disabled={blocked} onClick={() => { setAskWho(''); setDeciding('request') }} title={blockedTitle || 'Ask the owner or a manager to approve this stage'}><Send size={13} /> Request sign-off for {current.label}</button>
+          <button className="btn btn-sm" disabled={blocked} onClick={() => setDeciding('request')} title={blockedTitle || 'Ask the owner or a manager to approve this stage'}><Send size={13} /> Request sign-off for {current.label}</button>
         ) : null
       ) : <span className="small" style={{ color: '#16a34a' }}><Check size={13} style={{ verticalAlign: -2 }} /> Every stage is signed off</span>}
       {!pending && item.last_signoff?.status === 'rejected' && item.last_signoff.stage === item.stage && (
@@ -620,12 +617,11 @@ export function StageSignoff({ project, type, item, onChanged, compact = false, 
               {gate?.at_stage > 0 && deciding !== 'rejected' && ` Its ${gate.at_stage} ${gate.at_stage === 1 ? 'feature' : 'features'} still in ${current.label} ${gate.at_stage === 1 ? 'is' : 'are'} signed off with it.`}
             </p>
             {deciding === 'request' && (
-              <Field label="Ask" hint={askable.length === 0 ? 'Nobody else has the owner or manager role in this project, so the request goes to the owner.' : undefined}>
-                <select className="select" value={askWho} onChange={(e) => setAskWho(e.target.value)}>
-                  <option value="">The owner and all managers (first to answer decides)</option>
-                  {askable.map((m) => <option key={m.id} value={m.id}>{m.full_name} ({m.role})</option>)}
-                </select>
-              </Field>
+              <p className="small muted" style={{ margin: 0 }}>
+                {approverNames.length
+                  ? <>Goes to the owner and all managers: <b>{approverNames.join(', ')}</b>. The first of them to decide settles it.</>
+                  : 'Goes to the project owner.'}
+              </p>
             )}
             <Field label={deciding === 'rejected' ? 'What needs to change' : 'Note (optional)'}>
               <textarea className="textarea" style={{ minHeight: 70 }} value={note} onChange={(e) => setNote(e.target.value)} autoFocus />

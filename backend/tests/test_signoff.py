@@ -122,14 +122,16 @@ def test_a_sole_approver_may_approve_their_own_request(workspace):
     ok(ws.admin.api.post(f"/api/approvals/{request['id']}/decide", {"decision": "approved"}))
 
 
-def test_a_request_can_be_sent_to_one_approver(team):
+def test_every_request_goes_to_the_owner_and_all_managers(team):
     feature = team.feature()
-    fails(team.request("feature", feature["id"], approver_id=team.dev.id), 422)
+    # Naming one person is not possible: it is ignored, and everyone who can approve is asked.
     request = ok(team.request("feature", feature["id"], approver_id=team.manager.id), 201)
-    assert request["approver"]["id"] == team.manager.id
-    fails(team.decide(request["id"], team.owner), 403, "sent to")
-    assert not [i for i in ok(team.owner.api.get("/api/notifications"))["pending"] if i["kind"] == "approval"]
-    ok(team.decide(request["id"], team.manager))
+    assert request["approver"] is None
+    for person in (team.owner, team.manager):
+        assert any(i["kind"] == "approval" for i in ok(person.api.get("/api/notifications"))["pending"])
+    ok(team.decide(request["id"], team.owner))  # the first to decide settles it
+    general = ok(team.dev.api.post(f"/api/projects/{team.pid}/approvals", {"kind": "general", "title": "Buy a laptop", "approver_id": team.manager.id}), 201)
+    assert general["approver"] is None
 
 
 def test_workspace_admins_approve_only_as_owner_or_manager(workspace):
@@ -282,7 +284,6 @@ def test_other_approvals_cannot_be_asked_twice(team):
     ok(team.dev.api.post(f"/api/projects/{team.pid}/approvals", {"kind": "phase", "phase": "design"}), 201)
     ok(team.dev.api.post(f"/api/projects/{team.pid}/approvals", {"kind": "general", "title": "Buy a licence"}), 201)
     fails(team.dev.api.post(f"/api/projects/{team.pid}/approvals", {"kind": "general", "title": "Buy a licence"}), 409)
-    fails(team.dev.api.post(f"/api/projects/{team.pid}/approvals", {"kind": "general", "title": "x", "approver_id": team.dev.id}), 422)
 
 
 # ───────────── Checklists ─────────────

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlarmClock, CalendarClock, Check, CircleDot, Flag, GanttChart, Hourglass, Layers, Rocket, Timer } from 'lucide-react'
+import { AlarmClock, Boxes, CalendarClock, Check, CircleDot, Flag, GanttChart, Hourglass, Layers, Rocket, Timer } from 'lucide-react'
 import { api, notifyChanged } from '../api'
 import { useConfirm, useToast } from '../context'
 import { PhaseChecklist } from './ProjectExtras'
@@ -11,6 +11,7 @@ import {
   ENVIRONMENTS,
   Empty,
   FEATURE_STAGES,
+  MILESTONE_STAGES,
   PHASES,
   Progress,
   STATUSES,
@@ -38,7 +39,36 @@ const hours = (n) => `${Math.round(n * 10) / 10}h`
 
 /* ───────────── Overview ───────────── */
 
-export function Overview({ project, issues, milestones, features, releases, risks, checks, setTab, reload }) {
+/** One level of the lifecycle (milestones, modules or features): how many sit in each stage. */
+function StageMix({ icon: Icon, label, items, stages, waiting, onOpen }) {
+  const total = items.length
+  const counts = stages.map((s) => ({ ...s, count: items.filter((x) => x.stage === s.key).length }))
+  return (
+    <div className="stage-mix">
+      <div className="stage-mix-head">
+        <span className="icon-label"><Icon size={15} /> <b>{label}</b> <span className="faint small">{total}</span></span>
+        {waiting > 0 && <span className="signoff-wait"><Hourglass size={12} /> {waiting} waiting</span>}
+        <button className="btn btn-ghost btn-sm" onClick={onOpen}>Open</button>
+      </div>
+      {total === 0 ? <div className="faint small">None yet</div> : (
+        <>
+          <div className="stage-mix-bar" role="img" aria-label={`${label} by stage`}>
+            {counts.filter((c) => c.count).map((c) => (
+              <span key={c.key} style={{ flex: c.count, background: c.color }} title={`${c.label}: ${c.count}`} />
+            ))}
+          </div>
+          <div className="stage-mix-legend">
+            {counts.map((c) => (
+              <span key={c.key} className={c.count ? '' : 'faint'}><i style={{ background: c.color }} />{c.label} {c.count}</span>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+export function Overview({ project, issues, milestones, modules = [], features, releases, risks, checks, setTab, reload }) {
   const toast = useToast()
   const confirm = useConfirm()
   const hasBudgets = useFeature('budgets') && useModule('budgets')
@@ -123,24 +153,27 @@ export function Overview({ project, issues, milestones, features, releases, risk
   const unassigned = open.filter((i) => !i.assignee).length
   const maxLoad = Math.max(1, ...workload.map((w) => w.count))
   const openMilestones = milestones.filter((m) => m.status === 'open')
-  const waiting = [...features, ...milestones].filter((x) => x.signoff).length
+  const waiting = [...features, ...modules, ...milestones].filter((x) => x.signoff).length
 
   return (
     <div className="stack" style={{ gap: 16 }}>
       {project.signoff_gated ? (
         /* The lifecycle is followed on each feature and each milestone, not for the project as a whole. */
-        <div className="card card-pad row between row-wrap" style={{ gap: 12 }}>
-          <div>
-            <b>Lifecycle</b>
-            <div className="small muted">
-              Each feature and each milestone has its own stages and sign-offs.{' '}
-              {waiting > 0 ? `${waiting} sign-off ${waiting === 1 ? 'request is' : 'requests are'} waiting for the owner or a manager.` : 'No sign-off is waiting.'}
-            </div>
+        <div className="card">
+          <div className="card-header">
+            <h2>Lifecycle</h2>
+            <span className="small muted">
+              {waiting > 0 ? `${waiting} sign-off ${waiting === 1 ? 'request is' : 'requests are'} waiting for the owner or a manager` : 'No sign-off is waiting'}
+            </span>
           </div>
-          <span className="row" style={{ gap: 6 }}>
-            <button className="btn btn-sm" onClick={() => setTab('features')}>Features</button>
-            <button className="btn btn-sm" onClick={() => setTab('milestones')}>Milestones</button>
-          </span>
+          <div className="card-body stack" style={{ gap: 14 }}>
+            <p className="small muted" style={{ margin: 0 }}>
+              Milestones hold modules, modules hold features. Every stage is signed off; a module and a milestone move on when all their features are signed off.
+            </p>
+            <StageMix icon={Flag} label="Milestones" items={milestones} stages={MILESTONE_STAGES} waiting={milestones.filter((x) => x.signoff).length} onOpen={() => setTab('milestones')} />
+            <StageMix icon={Boxes} label="Modules" items={modules} stages={FEATURE_STAGES} waiting={modules.filter((x) => x.signoff).length} onOpen={() => setTab('modules')} />
+            <StageMix icon={Layers} label="Features" items={features} stages={FEATURE_STAGES} waiting={features.filter((x) => x.signoff).length} onOpen={() => setTab('features')} />
+          </div>
         </div>
       ) : (
         <>
@@ -343,11 +376,11 @@ export function Overview({ project, issues, milestones, features, releases, risk
 
 /* ───────────── Timeline (Gantt) ───────────── */
 
-export function ProjectTimeline({ project, issues, milestones, features, onCreate }) {
+/* The plan as a Gantt chart, nested the way the project is: milestone → modules → features → issues. */
+export function ProjectTimeline({ project, issues, milestones, modules = [], features, onCreate, onOpenFeature }) {
   const openIssue = useOpenIssue()
   const toast = useToast()
   const [hideDone, setHideDone] = useState(false)
-  const [groupBy, setGroupBy] = useState('milestone')
   const [pending, setPending] = useState({}) // optimistic dates until the reload lands
 
   useEffect(() => setPending({}), [issues])
@@ -360,13 +393,13 @@ export function ProjectTimeline({ project, issues, milestones, features, onCreat
       const end = p ? p.end : parseDay(i.due_date ?? i.start_date)
       return { start, end }
     }
-    const issueRow = (i) => {
+    const issueRow = (i, depth) => {
       const { start, end } = span(i)
       return {
         key: `i-${i.id}`,
         issue: i,
         kind: 'bar',
-        indent: true,
+        depth,
         start,
         end,
         color: i.status_color || byKey(STATUSES, i.status).color,
@@ -385,54 +418,82 @@ export function ProjectTimeline({ project, issues, milestones, features, onCreat
       }
     }
     const byStart = (a, b) => (a.start ?? Infinity) - (b.start ?? Infinity) || a.issue.id - b.issue.id
+    const issuesFor = (match, depth) => visible.filter(match).map((i) => issueRow(i, depth)).sort(byStart)
 
-    const sections = groupBy === 'feature'
-      ? features.map((f) => ({
-          key: `f-${f.id}`, name: f.title, Icon: Layers, start: parseDay(f.start_date), marker: parseDay(f.target_date),
-          done: f.stage === 'released', progress: f.progress, match: (i) => i.feature_id === f.id,
-        }))
-      : milestones.map((m) => ({
-          key: `m-${m.id}`, name: m.name, Icon: Flag, start: parseDay(m.start_date), marker: parseDay(m.due_date),
-          done: m.status === 'closed', progress: m.progress, match: (i) => i.milestone_id === m.id,
-        }))
-
-    const out = []
-    const grouped = new Set()
-    for (const section of sections) {
-      if (hideDone && section.done) continue
-      const children = visible.filter(section.match).map(issueRow).sort(byStart)
-      children.forEach((c) => grouped.add(c.issue.id))
+    // A summary row spans its own dates and everything under it.
+    const group = ({ key, depth, Icon, name, start, marker, done, note, onClick }, children) => {
       const starts = children.map((c) => c.start).filter((d) => d != null)
       const ends = children.map((c) => c.end).filter((d) => d != null)
-      if (section.start != null) starts.push(section.start)
-      if (section.marker != null && starts.length) ends.push(section.marker)
-      const { Icon } = section
-      out.push({
-        key: section.key,
-        kind: 'group',
-        start: starts.length && ends.length ? Math.min(...starts) : null,
-        end: starts.length && ends.length ? Math.max(...ends) : null,
-        marker: section.marker,
+      if (start != null) starts.push(start)
+      if (marker != null) ends.push(marker)
+      const known = starts.length && ends.length
+      return {
+        key, kind: 'group', depth, marker, done, title: name, onClick,
+        start: known ? Math.min(...starts) : null,
+        end: known ? Math.max(...ends) : null,
         color: project.color,
-        done: section.done,
-        title: section.name,
         label: (
           <>
             <Icon size={14} color={project.color} />
-            <span className="truncate grow">{section.name}</span>
-            <span className="faint small" style={{ fontWeight: 500 }}>{section.progress}%</span>
+            <span className="truncate grow">{name}</span>
+            {note && <span className="faint small" style={{ fontWeight: 500 }}>{note}</span>}
           </>
         ),
-      })
-      out.push(...children)
-    }
-    const loose = visible.filter((i) => !grouped.has(i.id))
-    if (loose.length) {
-      if (out.length) {
-        out.push({ key: 'g-none', kind: 'group', label: <span className="muted">{groupBy === 'feature' ? 'No feature' : 'No milestone'}</span> })
       }
-      out.push(...loose.map(issueRow).sort(byStart).map((r) => ({ ...r, indent: out.length > 0 })))
     }
+    const stageLabel = (stage) => byKey(FEATURE_STAGES, stage).label
+
+    // Feature → its issues.
+    const featureBlock = (f, depth) => {
+      const children = issuesFor((i) => i.feature_id === f.id, depth + 1)
+      if (hideDone && f.stage === 'released' && children.length === 0) return []
+      const row = group({
+        key: `f-${f.id}`, depth, Icon: Layers, name: f.title, start: parseDay(f.start_date), marker: parseDay(f.target_date),
+        done: f.stage === 'released', note: stageLabel(f.stage), onClick: onOpenFeature ? () => onOpenFeature(f.id) : undefined,
+      }, children)
+      return [row, ...children]
+    }
+    // Module → its features → their issues.
+    const moduleBlock = (mod, depth) => {
+      const blocks = features.filter((f) => f.module_id === mod.id).map((f) => featureBlock(f, depth + 1))
+      if (hideDone && mod.stage === 'released' && blocks.every((b) => b.length === 0)) return []
+      const row = group({
+        key: `md-${mod.id}`, depth, Icon: Boxes, name: mod.name, start: parseDay(mod.start_date), marker: parseDay(mod.target_date),
+        done: mod.stage === 'released', note: stageLabel(mod.stage),
+      }, blocks.filter((b) => b.length).map((b) => b[0]))
+      return [row, ...blocks.flat()]
+    }
+
+    const featureIds = new Set(features.map((f) => f.id))
+    const out = []
+    // Milestone → its modules → features of its own → issues of its own.
+    for (const m of milestones) {
+      if (hideDone && m.status === 'closed') continue
+      const blocks = [
+        ...modules.filter((mod) => mod.milestone_id === m.id).map((mod) => moduleBlock(mod, 1)),
+        ...features.filter((f) => f.milestone_id === m.id && !f.module_id).map((f) => featureBlock(f, 1)),
+      ].filter((b) => b.length)
+      const loose = issuesFor((i) => i.milestone_id === m.id && !(i.feature_id && featureIds.has(i.feature_id)), 1)
+      const row = group({
+        key: `m-${m.id}`, depth: 0, Icon: Flag, name: m.name, start: parseDay(m.start_date), marker: parseDay(m.due_date),
+        done: m.status === 'closed', note: `${m.progress}%`,
+      }, [...blocks.map((b) => b[0]), ...loose])
+      out.push(row, ...blocks.flat(), ...loose)
+    }
+    // Everything that is not in a milestone.
+    const milestoneIds = new Set(milestones.map((m) => m.id))
+    const rest = [
+      ...modules.filter((mod) => !mod.milestone_id || !milestoneIds.has(mod.milestone_id)).map((mod) => moduleBlock(mod, 1)),
+      ...features.filter((f) => !f.module_id && (!f.milestone_id || !milestoneIds.has(f.milestone_id))).map((f) => featureBlock(f, 1)),
+    ].filter((b) => b.length)
+    const restIssues = issuesFor((i) => !(i.feature_id && featureIds.has(i.feature_id)) && !(i.milestone_id && milestoneIds.has(i.milestone_id)), 1)
+    if (rest.length || restIssues.length) {
+      if (out.length) out.push({ key: 'g-none', kind: 'group', depth: 0, label: <span className="muted">Not in a milestone</span> })
+      const depth = out.length ? 0 : -1
+      const shift = (r) => ({ ...r, depth: r.depth + depth })
+      out.push(...rest.flat().map(shift), ...restIssues.map(shift))
+    }
+
     const present = new Set(out.map((r) => r.key))
     const deps = []
     for (const i of visible) {
@@ -441,7 +502,7 @@ export function ProjectTimeline({ project, issues, milestones, features, onCreat
       }
     }
     return { rows: out, links: deps }
-  }, [issues, milestones, features, groupBy, hideDone, pending, project.color]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [issues, milestones, modules, features, hideDone, pending, project.color]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const reschedule = async (row, start, end) => {
     const id = row.issue.id
@@ -477,17 +538,13 @@ export function ProjectTimeline({ project, issues, milestones, features, onCreat
         rows={rows}
         links={links}
         onReschedule={reschedule}
-        heading={groupBy === 'feature' ? 'Features and issues' : 'Milestones and issues'}
+        heading="Milestones › modules › features › issues"
         toolbar={
           <>
             <span className="gantt-legend hide-mobile">
               {statusesOf(project).map((s) => <span key={s.key}><i style={{ background: s.color }} />{s.label}</span>)}
               <span><i className="diamond" style={{ background: project.color }} />Milestone</span>
             </span>
-            <div className="segmented compact" title="Group issues by">
-              <button type="button" className={groupBy === 'milestone' ? 'active' : ''} onClick={() => setGroupBy('milestone')}><Flag size={13} /> Milestones</button>
-              <button type="button" className={groupBy === 'feature' ? 'active' : ''} onClick={() => setGroupBy('feature')}><Layers size={13} /> Features</button>
-            </div>
             <label className="check-item small">
               <input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} /> Hide completed
             </label>
