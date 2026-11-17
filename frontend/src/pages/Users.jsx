@@ -29,6 +29,8 @@ function PasswordChoice({ mode, setMode, password, setPassword }) {
 
 function CredentialsModal({ result, onClose }) {
   const toast = useToast()
+  const { user: me } = useAuth()
+  const workspaceId = me?.org?.public_id
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(result.temporary_password)
@@ -43,6 +45,9 @@ function CredentialsModal({ result, onClose }) {
         <p className="muted">
           Give <b>{result.user.full_name}</b> the details below through a private channel.
         </p>
+        <Field label="Workspace ID" as="div">
+          <div className="secret-box"><code>{workspaceId}</code></div>
+        </Field>
         <Field label="Username" as="div">
           <div className="secret-box"><code>{result.user.username}</code></div>
         </Field>

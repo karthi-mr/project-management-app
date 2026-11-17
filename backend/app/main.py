@@ -55,7 +55,8 @@ def seed_admin() -> None:
             )
         )
         db.commit()
-        print(f"[setup] Created administrator '{DEFAULT_ADMIN_USERNAME}' with the default password.")
+        print(f"[setup] Created administrator '{DEFAULT_ADMIN_USERNAME}' with the default password "
+              f"in workspace {saas.format_public_id(org.public_id)}.")
 
 
 @asynccontextmanager

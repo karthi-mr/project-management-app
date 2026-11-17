@@ -1,4 +1,5 @@
 import json
+import re
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -8,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..audit import audit
 from ..database import get_db
-from ..models import PasswordResetRequest, User, utcnow
+from ..models import Organization, PasswordResetRequest, User, format_public_id, utcnow
 from .. import twofactor
 from ..security import (
     create_challenge,
@@ -43,6 +44,7 @@ _failures: dict[str, tuple[int, float]] = {}
 
 
 class LoginIn(BaseModel):
+    workspace: str = Field(min_length=1, max_length=60)  # the 8-digit workspace ID, or its sign-in address
     username: str = Field(min_length=1, max_length=255)
     password: str = Field(min_length=1, max_length=200)
 
@@ -66,7 +68,13 @@ class ChangePasswordIn(BaseModel):
     new_password: str = Field(max_length=200)
 
 
+class FindWorkspaceIn(BaseModel):
+    email: str = Field(min_length=3, max_length=255)
+    password: str = Field(min_length=1, max_length=200)
+
+
 class ForgotIn(BaseModel):
+    workspace: str = Field(min_length=1, max_length=60)
     identifier: str = Field(min_length=1, max_length=255)
     note: str = Field(default="", max_length=500)
 
@@ -84,18 +92,43 @@ class PreferencesIn(BaseModel):
     preferences: dict
 
 
-def _find_user(db: Session, identifier: str) -> User | None:
+_DUMMY: list[str] = []
+
+
+def _dummy_hash() -> str:
+    if not _DUMMY:
+        _DUMMY.append(hash_password("not-a-real-password"))
+    return _DUMMY[0]
+
+
+def find_workspace(db: Session, value: str) -> Organization | None:
+    """A workspace by its 8-digit ID (spaces and dashes allowed) or by its sign-in address."""
+    raw = value.strip().lower()
+    digits = re.sub(r"[\s-]", "", raw)
+    if re.fullmatch(r"\d{8}", digits):
+        return db.scalar(select(Organization).where(Organization.public_id == digits))
+    if re.fullmatch(r"[a-z0-9-]{3,40}", raw):
+        return db.scalar(select(Organization).where(Organization.slug == raw))
+    return None
+
+
+def _find_user(db: Session, workspace: str, identifier: str) -> User | None:
+    org = find_workspace(db, workspace)
+    if org is None:
+        return None
     ident = identifier.strip().lower()
     return db.scalar(
         select(User).where(
-            or_(func.lower(User.username) == ident, func.lower(User.email) == ident)
+            User.org_id == org.id,
+            or_(func.lower(User.username) == ident, func.lower(User.email) == ident),
         )
     )
 
 
 @router.post("/login")
 def login(data: LoginIn, request: Request, db: Session = Depends(get_db)):
-    key = data.username.strip().lower()
+    workspace_key = re.sub(r"[\s-]", "", data.workspace.strip().lower())
+    key = f"{workspace_key}:{data.username.strip().lower()}"
     count, since = _failures.get(key, (0, 0.0))
     if count >= MAX_FAILURES:
         if time.time() - since < LOCK_SECONDS:
@@ -103,12 +136,17 @@ def login(data: LoginIn, request: Request, db: Session = Depends(get_db)):
         _failures.pop(key, None)
         count = 0
 
-    user = _find_user(db, data.username)
-    if not user or not verify_password(data.password, user.password_hash):
+    user = _find_user(db, data.workspace, data.username)
+    # Check a password even when nobody matched, so the answer takes as long either way.
+    password_ok = verify_password(data.password, user.password_hash if user else _dummy_hash())
+    if not user or not password_ok:
         _failures[key] = (count + 1, time.time())
-        audit(db, user, "login.failed", "Wrong username or password", request, actor_name=key)
-        db.commit()
-        raise HTTPException(401, "Incorrect username or password")
+        if user:
+            audit(db, user, "login.failed", "Wrong password", request, actor_name=user.username)
+            db.commit()
+        # The same answer whether the workspace, the person or the password was wrong, so nobody
+        # can find out which workspace IDs exist by trying them.
+        raise HTTPException(401, "Incorrect workspace ID, username or password")
     if not user.is_active:
         raise HTTPException(403, "This account is disabled. Contact your administrator.")
 
@@ -316,7 +354,7 @@ def change_password(
 @router.post("/forgot-password")
 def forgot_password(data: ForgotIn, request: Request, db: Session = Depends(get_db)):
     # Always answer the same way so accounts cannot be enumerated.
-    user = _find_user(db, data.identifier)
+    user = _find_user(db, data.workspace, data.identifier)
     if user and user.is_active:
         pending = db.scalar(
             select(PasswordResetRequest).where(
@@ -337,6 +375,30 @@ def forgot_password(data: ForgotIn, request: Request, db: Session = Depends(get_
     }
 
 
+@router.post("/find-workspace")
+def find_my_workspace(data: FindWorkspaceIn, db: Session = Depends(get_db)):
+    """Someone who forgot their workspace ID: list the workspaces where this email and password
+    sign in. Without the right password nothing is shown, so this reveals nobody's accounts."""
+    email = data.email.strip().lower()
+    key = f"find:{email}"
+    count, since = _failures.get(key, (0, 0.0))
+    if count >= MAX_FAILURES:
+        if time.time() - since < LOCK_SECONDS:
+            raise HTTPException(429, "Too many failed attempts. Try again in a few minutes.")
+        count = 0
+    found = []
+    for user in db.scalars(select(User).where(func.lower(User.email) == email, User.is_active)).all():
+        if verify_password(data.password, user.password_hash):
+            org = db.get(Organization, user.org_id)
+            if org is not None:
+                found.append({"name": org.name, "public_id": format_public_id(org.public_id), "username": user.username})
+    if not found:
+        _failures[key] = (count + 1, time.time())
+        raise HTTPException(404, "No workspace found for that email and password")
+    _failures.pop(key, None)
+    return sorted(found, key=lambda w: w["name"].lower())
+
+
 @router.patch("/profile")
 def update_profile(
     data: ProfileIn,
@@ -345,8 +407,8 @@ def update_profile(
 ):
     email = data.email.lower()
     clash = db.scalar(
-        select(User).where(func.lower(User.email) == email, User.id != user.id)
-        .execution_options(all_orgs=True)  # emails are unique across every workspace
+        select(User).where(func.lower(User.email) == email, User.id != user.id, User.org_id == user.org_id)
+        .execution_options(all_orgs=True)  # emails are unique within a workspace
     )
     if clash:
         raise HTTPException(409, "That email is already in use")

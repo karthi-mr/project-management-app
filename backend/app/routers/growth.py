@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from ..audit import audit
 from ..database import Base, get_db
+from ..models import format_public_id
 from ..models import (
     Announcement,
     Coupon,
@@ -56,7 +57,8 @@ def workspace_brand(slug: str, db: Session = Depends(get_db)):
     org = db.scalar(select(Organization).where(Organization.slug == slug.lower()))
     if not org or org.suspended:
         raise HTTPException(404, "Workspace not found")
-    return {"name": org.name, "logo_url": org.logo_url, "brand_color": org.brand_color, "slug": org.slug}
+    return {"name": org.name, "logo_url": org.logo_url, "brand_color": org.brand_color, "slug": org.slug,
+            "public_id": format_public_id(org.public_id)}
 
 
 # ───────────── Client share links ─────────────

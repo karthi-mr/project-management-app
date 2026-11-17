@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { AlertTriangle, CheckCircle2, Info, XCircle } from 'lucide-react'
 import { api, getToken, setToken } from './api'
 import { connectRealtime, disconnectRealtime, onRealtime } from './realtime'
+import { rememberWorkspace } from './workspaceId'
 
 /* ───────────── Auth ───────────── */
 
@@ -19,6 +20,7 @@ export function AuthProvider({ children }) {
 
   const setSession = useCallback((session) => {
     if (session.access_token) setToken(session.access_token)
+    rememberWorkspace(session.user?.org)
     setUser(session.user)
   }, [])
 
@@ -76,8 +78,8 @@ export function AuthProvider({ children }) {
   }, [logout])
 
   const login = useCallback(
-    async (username, password) => {
-      const session = await api('/auth/login', { method: 'POST', body: { username, password } })
+    async (workspace, username, password) => {
+      const session = await api('/auth/login', { method: 'POST', body: { workspace, username, password } })
       if (session.two_factor_required) return { challenge: session.challenge } // the code comes next
       setSession(session)
       return session.user

@@ -113,6 +113,7 @@ function NewWorkspaceModal({ onClose, onCreated }) {
       <Modal title="Workspace created" onClose={onClose} size="sm">
         <div className="modal-body stack">
           <p className="muted">Give the administrator of <b>{result.organization.name}</b> these sign-in details through a private channel.</p>
+          <Field label="Workspace ID" as="div"><div className="secret-box"><code>{result.organization.public_id}</code></div></Field>
           <Field label="Username" as="div"><div className="secret-box"><code>{result.username}</code></div></Field>
           <Field label="Temporary password" as="div">
             <div className="secret-box"><code>{result.temporary_password}</code><button className="btn btn-sm" onClick={copy}><Copy size={14} /> Copy</button></div>
@@ -209,7 +210,7 @@ function WorkspaceModal({ orgId, plans, onClose, onChanged, onInvoice }) {
             <div className="row row-wrap" style={{ gap: 10 }}>
               <LicenseBadge status={org.status} />
               <span className="muted small">
-                {org.usage.users} users · {org.usage.projects} projects · created {formatDate(org.created_at, true)}
+                Workspace ID {org.public_id} · {org.usage.users} users · {org.usage.projects} projects · created {formatDate(org.created_at, true)}
                 {org.last_activity ? ` · last sign-in ${timeAgo(org.last_activity)}` : ''}
               </span>
               {org.license_key && <code className="mono small faint">{org.license_key}</code>}
@@ -318,7 +319,7 @@ function Workspaces({ onOpen, version, onChanged }) {
       <div className="toolbar">
         <div className="input-icon">
           <Search size={15} />
-          <input className="input search-input" placeholder="Search workspace, person or email…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input className="input search-input" placeholder="Search workspace, ID, person or email…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <select className="select" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status">
           <option value="">All statuses</option>
@@ -337,7 +338,7 @@ function Workspaces({ onOpen, version, onChanged }) {
             <tbody>
               {rows.map((o) => (
                 <tr key={o.id} className="clickable" onClick={() => onOpen(o.id)}>
-                  <td><b>{o.name}</b><div className="faint small">{o.contact ? `${o.contact.name} · ${o.contact.email}` : 'No administrator'}</div></td>
+                  <td><b>{o.name}</b> <span className="faint small mono">{o.public_id}</span><div className="faint small">{o.contact ? `${o.contact.name} · ${o.contact.email}` : 'No administrator'}</div></td>
                   <td>{o.plan?.name || '—'}</td>
                   <td><LicenseBadge status={o.status} /></td>
                   <td>{o.usage.users}<span className="faint"> / {o.seats ?? '∞'}</span></td>

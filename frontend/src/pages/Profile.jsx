@@ -8,6 +8,7 @@ import { LANGUAGES, timeZones } from '../i18n'
 import { MySessions } from '../components/Security'
 import { TwoFactorCard } from '../components/TwoFactor'
 import { PasswordInput } from './AuthPages'
+import WorkspaceIdCard from '../components/WorkspaceIdCard'
 
 export default function Profile() {
   const { user, setUser, setSession } = useAuth()
@@ -123,6 +124,8 @@ export default function Profile() {
           </div>
           <div><button className="btn btn-primary" disabled={savingProfile}>{savingProfile ? <Spinner /> : 'Save profile'}</button></div>
         </form>
+
+        <WorkspaceIdCard />
 
         <div className="card card-pad stack">
           <div>

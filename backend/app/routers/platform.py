@@ -132,7 +132,10 @@ def list_organizations(
     if q and q.strip():
         like = f"%{q.strip()}%"
         matching_users = select(User.org_id).where(or_(User.email.ilike(like), User.full_name.ilike(like)))
-        stmt = stmt.where(or_(Organization.name.ilike(like), Organization.id.in_(matching_users)))
+        digits = re.sub(r"[\s-]", "", q.strip())
+        stmt = stmt.where(or_(
+            Organization.name.ilike(like), Organization.id.in_(matching_users), Organization.public_id == digits,
+        ))
     rows = [_row(db, o) for o in db.scalars(stmt.order_by(Organization.created_at.desc())).all()]
     return [r for r in rows if not status or r["status"] == status]
 
@@ -144,10 +147,6 @@ def create_org(data: OrgCreate, request: Request, owner: User = Depends(require_
     if not re.fullmatch(r"[a-z0-9._-]{3,50}", username):
         raise HTTPException(422, "Username may only contain letters, numbers, dots, dashes and underscores")
     email = data.admin_email.lower()
-    if db.scalar(select(User).where(func.lower(User.username) == username)):
-        raise HTTPException(409, "That username is already taken")
-    if db.scalar(select(User).where(func.lower(User.email) == email)):
-        raise HTTPException(409, "That email is already in use")
     org = create_organization(db, data.name)
     org.billing_email = email
     password = generate_password()

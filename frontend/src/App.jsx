@@ -2,7 +2,7 @@ import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { useAuth } from './context'
 import { Spinner } from './ui'
 import Layout from './components/Layout'
-import { ChangePassword, ForgotPassword, Login, SetupTwoFactor, Signup } from './pages/AuthPages'
+import { ChangePassword, FindWorkspace, ForgotPassword, Login, SetupTwoFactor, Signup } from './pages/AuthPages'
 import Billing from './pages/Billing'
 import Platform from './pages/Platform'
 import Support from './pages/Support'
@@ -55,6 +55,7 @@ export default function App() {
       <Route element={<PublicOnly />}>
         <Route path="/login" element={<Login />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/find-workspace" element={<FindWorkspace />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/w/:slug" element={<Login />} />
         <Route path="/welcome" element={<Landing />} />

@@ -4,6 +4,7 @@ import { CreditCard, LayoutGrid, ShieldCheck } from 'lucide-react'
 import { api } from '../api'
 import { useAuth, useToast } from '../context'
 import { PageSkeleton, Spinner } from '../ui'
+import WorkspaceIdCard from '../components/WorkspaceIdCard'
 
 const HINTS = {
   sprints: 'Time-boxed iterations on the Work tab.',
@@ -51,6 +52,9 @@ export default function WorkspaceSettings() {
           <h1>Workspace settings</h1>
           <p>Keep the app as simple as your team needs.</p>
         </div>
+      </div>
+      <div style={{ maxWidth: 820, marginBottom: 16 }}>
+        <WorkspaceIdCard admin />
       </div>
       <div className="card card-pad stack" style={{ maxWidth: 820 }}>
         <div className="row between row-wrap">

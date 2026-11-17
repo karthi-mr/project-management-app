@@ -134,11 +134,8 @@ def register(data: RegisterIn, request: Request, db: Session = Depends(get_db)):
         raise HTTPException(422, "Username may only contain letters, numbers, dots, dashes and underscores")
     email = data.email.lower()
     validate_password(data.password)
-    if db.scalar(select(User).where(func.lower(User.username) == username)):
-        raise HTTPException(409, "That username is already taken")
-    if db.scalar(select(User).where(func.lower(User.email) == email)):
-        raise HTTPException(409, "An account with that email already exists. Sign in instead.")
-
+    # A new workspace has nobody in it yet, so any username and email are free: the same person
+    # may already have an account in another workspace.
     org = create_organization(db, data.company, settings)
     org.billing_email = email
     user = User(

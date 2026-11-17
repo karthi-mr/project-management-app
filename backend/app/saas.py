@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
+from .models import format_public_id
 from .models import (
     AuditLog,
     Organization,
@@ -196,6 +197,7 @@ def org_out(db: Session, org: Organization, private: bool = False) -> dict:
     data = {
         "id": org.id,
         "name": org.name,
+        "public_id": format_public_id(org.public_id),
         "status": status,
         "is_trial": org.is_trial,
         "plan": plan_out(org.plan) if org.plan else None,

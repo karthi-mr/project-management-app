@@ -94,10 +94,12 @@ def create_user(
             422, "Username may only contain letters, numbers, dots, dashes and underscores"
         )
     email = data.email.lower()
-    if db.scalar(select(User).where(func.lower(User.username) == username).execution_options(all_orgs=True)):
-        raise HTTPException(409, "That username is already taken")
-    if db.scalar(select(User).where(func.lower(User.email) == email).execution_options(all_orgs=True)):
-        raise HTTPException(409, "That email is already in use")
+    # Unique within this workspace only; another workspace may have the same username or email.
+    same = select(User.id).where(User.org_id == admin.org_id).execution_options(all_orgs=True)
+    if db.scalar(same.where(func.lower(User.username) == username)):
+        raise HTTPException(409, "Someone in this workspace already has that username")
+    if db.scalar(same.where(func.lower(User.email) == email)):
+        raise HTTPException(409, "Someone in this workspace already has that email")
 
     check_seat_available(db, get_org(db, admin))
     user = User(
@@ -141,11 +143,11 @@ def update_user(
     if data.email is not None:
         email = data.email.lower()
         clash = db.scalar(
-            select(User).where(func.lower(User.email) == email, User.id != user.id)
+            select(User).where(func.lower(User.email) == email, User.id != user.id, User.org_id == user.org_id)
             .execution_options(all_orgs=True)
         )
         if clash:
-            raise HTTPException(409, "That email is already in use")
+            raise HTTPException(409, "Someone in this workspace already has that email")
         user.email = email
     if data.full_name is not None:
         user.full_name = data.full_name.strip()

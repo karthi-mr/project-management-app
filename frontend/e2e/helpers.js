@@ -24,16 +24,17 @@ export async function signUp(request, company = unique('Company ')) {
   const session = await call(request, null, 'POST', '/api/auth/register', {
     company, full_name: `Admin ${username}`, email: `${username}@example.com`, username, password, accept_terms: true,
   })
-  return { token: session.access_token, user: session.user, username, password, company }
+  return { token: session.access_token, user: session.user, workspace: session.user.org.public_id, username, password, company }
 }
 
 /** Someone in the workspace, with their first password change done. */
 export async function addPerson(request, adminToken, { role = 'member', fullName } = {}) {
+  const workspace = (await call(request, adminToken, 'GET', '/api/auth/me')).org.public_id
   const username = unique('p')
   const created = await call(request, adminToken, 'POST', '/api/users', {
     username, full_name: fullName || username, email: `${username}@example.com`, role, password: 'Temp#Pass123',
   })
-  const first = await call(request, null, 'POST', '/api/auth/login', { username, password: 'Temp#Pass123' })
+  const first = await call(request, null, 'POST', '/api/auth/login', { workspace, username, password: 'Temp#Pass123' })
   const changed = await call(request, first.access_token, 'POST', '/api/auth/change-password', {
     current_password: 'Temp#Pass123', new_password: 'Member#Pass123',
   })
@@ -44,10 +45,14 @@ const OWNER_PASSWORD = 'Owner#Pass123'
 
 /** The platform owner (first administrator), with the forced password change done once. */
 export async function ownerToken(request) {
+  const signIn = async (password) => {
+    const [workspace] = await call(request, null, 'POST', '/api/auth/find-workspace', { email: 'admin@example.com', password })
+    return call(request, null, 'POST', '/api/auth/login', { workspace: workspace.public_id, username: 'admin', password })
+  }
   try {
-    return (await call(request, null, 'POST', '/api/auth/login', { username: 'admin', password: OWNER_PASSWORD })).access_token
+    return (await signIn(OWNER_PASSWORD)).access_token
   } catch {
-    const first = await call(request, null, 'POST', '/api/auth/login', { username: 'admin', password: 'Admin@123' })
+    const first = await signIn('Admin@123')
     return (await call(request, first.access_token, 'POST', '/api/auth/change-password', {
       current_password: 'Admin@123', new_password: OWNER_PASSWORD,
     })).access_token

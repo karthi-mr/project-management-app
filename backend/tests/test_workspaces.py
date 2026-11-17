@@ -35,8 +35,8 @@ def test_sign_up_creates_a_trial_workspace_with_an_example_project(anon):
 def test_sign_up_validation(anon, workspace):
     existing = workspace()
     fails(register(anon, accept_terms=False), 422, "terms")
-    fails(register(anon, username=existing.username), 409)
-    fails(register(anon, email=f"{existing.username}@example.com"), 409)
+    # The same username and email may sign up another company: it is a separate account.
+    ok(register(anon, username=existing.username, email=f"{existing.username}@example.com"), 201)
     fails(register(anon, website="http://spam.example"), 400)  # the hidden honeypot field
     fails(register(anon, username="bad name!"), 422)
     fails(register(anon, password="weak"), 422)

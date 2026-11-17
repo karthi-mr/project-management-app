@@ -33,8 +33,11 @@ serves the web interface). Data lives in the Docker volumes `trackly_db_data` (d
 | -------- | ----------- |
 | `admin`  | `Admin@123` |
 
-You are forced to choose a new password immediately. To use a different initial password, set
-`PM_ADMIN_PASSWORD` in `.env` before the very first start.
+You also need your **workspace ID**: the app prints it on the very first start
+(`docker compose logs app | grep "Created administrator"`), and **Forgot your workspace ID?** on the
+sign-in page shows it for your email and password. You are forced to choose a new password
+immediately. To use a different initial password, set `PM_ADMIN_PASSWORD` in `.env` before the very
+first start.
 
 ### Everyday commands
 
@@ -281,7 +284,9 @@ Add `--replace` to overwrite a PostgreSQL database that already contains data.
 docker compose exec app python reset_admin.py admin
 ```
 
-This prints a new temporary password for that administrator.
+This prints the workspace ID and a new temporary password for that administrator. If several
+workspaces have an administrator with that username, it lists them; run it again with the ID:
+`python reset_admin.py admin 4821-7390`.
 
 ## Backups
 
@@ -512,3 +517,21 @@ GitHub runs all of this on every push (`.github/workflows/tests.yml`).
   tracking, budgets, portfolio, workload, chat, automation and client links can each be hidden for the
   whole workspace. Hiding only hides; nothing is deleted. New workspaces start with time tracking,
   budgets, portfolio, workload, automation, test cases and risks hidden. Existing workspaces keep everything.
+
+## Workspace IDs
+
+Every workspace has a random 8-digit **workspace ID** (shown as `4821-7390`). Usernames and emails are
+unique only inside a workspace, so the same person can have an account in two companies: two separate
+accounts, each with its own password and two-factor setup.
+
+- **Signing in** asks for the workspace ID, then the username or email and password. The ID may be
+  typed with or without the dash, or replaced by the workspace's sign-in address (the `acme` in `/w/acme`).
+  The device remembers it after the first sign-in, so people normally type it once.
+- **Wrong ID, wrong person or wrong password** all give the same answer, so nobody can find out which IDs
+  exist by trying them. Failed attempts are counted per workspace and username.
+- **Forgot your workspace ID?** asks for an email and password and lists the workspaces they open. Without
+  the right password nothing is shown. It is locked for a while after 5 failures.
+- **Where to find it:** the profile page (everyone) and Workspace settings (administrators), both with
+  a button that copies a sign-in link with the ID filled in. It is also shown when someone is added or
+  their password is reset, after sign-up, and to the platform owner, who can search workspaces by ID.
+- **Upgrading** gives every existing workspace an ID automatically; nobody's password changes.

@@ -32,8 +32,8 @@ def turn_on(person, clock):
     return secret, enabled["recovery_codes"]
 
 
-def sign_in(anon, username, password, code):
-    first = ok(anon.post("/api/auth/login", {"username": username, "password": password}))
+def sign_in(anon, ws, username, password, code):
+    first = ok(anon.post("/api/auth/login", {"workspace": ws.public_id, "username": username, "password": password}))
     assert first["two_factor_required"] and "access_token" not in first
     return anon.post("/api/auth/login/2fa", {"challenge": first["challenge"], "code": code})
 
@@ -57,7 +57,7 @@ def test_setup_gives_a_qr_code_and_needs_a_correct_code(workspace, clock):
 def test_sign_in_needs_the_code_and_codes_cannot_be_replayed(workspace, anon, clock):
     ws = workspace()
     secret, _ = turn_on(ws.admin, clock)
-    first = ok(anon.post("/api/auth/login", {"username": ws.username, "password": ws.password}))
+    first = ok(anon.post("/api/auth/login", {"workspace": ws.public_id, "username": ws.username, "password": ws.password}))
     challenge = first["challenge"]
     # The half-finished sign-in is not a sign-in.
     fails(Api(anon.client, challenge).get("/api/projects"), 401)
@@ -73,20 +73,20 @@ def test_sign_in_needs_the_code_and_codes_cannot_be_replayed(workspace, anon, cl
 def test_recovery_codes_work_once_and_can_be_renewed(workspace, anon, clock):
     ws = workspace()
     secret, codes = turn_on(ws.admin, clock)
-    session = ok(sign_in(anon, ws.username, ws.password, codes[0].upper()))
+    session = ok(sign_in(anon, ws, ws.username, ws.password, codes[0].upper()))
     assert session["recovery_codes_left"] == 9
-    fails(sign_in(anon, ws.username, ws.password, codes[0]), 401)
+    fails(sign_in(anon, ws, ws.username, ws.password, codes[0]), 401)
     renewed = ok(ws.admin.api.post("/api/auth/2fa/recovery-codes", {"code": clock.code(secret)}))["recovery_codes"]
     clock.advance()
-    fails(sign_in(anon, ws.username, ws.password, codes[1]), 401)  # old ones are dead
-    ok(sign_in(anon, ws.username, ws.password, renewed[0]))
+    fails(sign_in(anon, ws, ws.username, ws.password, codes[1]), 401)  # old ones are dead
+    ok(sign_in(anon, ws, ws.username, ws.password, renewed[0]))
     assert ok(ws.admin.api.get("/api/auth/2fa"))["recovery_codes_left"] == 9
 
 
 def test_wrong_codes_lock_the_account_codes_for_a_while(workspace, anon, clock):
     ws = workspace()
     secret, _ = turn_on(ws.admin, clock)
-    challenge = ok(anon.post("/api/auth/login", {"username": ws.username, "password": ws.password}))["challenge"]
+    challenge = ok(anon.post("/api/auth/login", {"workspace": ws.public_id, "username": ws.username, "password": ws.password}))["challenge"]
     statuses = [anon.post("/api/auth/login/2fa", {"challenge": challenge, "code": f"99999{n}"}).status_code for n in range(6)]
     assert statuses == [401] * 5 + [429]
     fails(anon.post("/api/auth/login/2fa", {"challenge": challenge, "code": clock.code(secret)}), 429)
@@ -98,7 +98,7 @@ def test_turning_it_off_needs_password_and_code(workspace, anon, clock):
     fails(ws.admin.api.post("/api/auth/2fa/disable", {"password": "wrong", "code": codes[0]}), 403)
     me = ok(ws.admin.api.post("/api/auth/2fa/disable", {"password": ws.password, "code": codes[0]}))
     assert me["two_factor_enabled"] is False
-    assert "access_token" in ok(anon.post("/api/auth/login", {"username": ws.username, "password": ws.password}))
+    assert "access_token" in ok(anon.post("/api/auth/login", {"workspace": ws.public_id, "username": ws.username, "password": ws.password}))
 
 
 def test_workspace_can_require_two_factor(workspace, anon, clock):
@@ -128,7 +128,7 @@ def test_admin_reset_for_a_lost_phone(workspace, anon, clock):
     fails(ws.admin.api.post(f"/api/users/{ws.admin.id}/reset-2fa"), 400)
     ok(ws.admin.api.post(f"/api/users/{person.id}/reset-2fa"), 204)
     fails(person.api.get("/api/auth/me"), 401)  # signed out everywhere
-    assert "access_token" in ok(anon.post("/api/auth/login", {"username": person.username, "password": person.password}))
+    assert "access_token" in ok(anon.post("/api/auth/login", {"workspace": ws.public_id, "username": person.username, "password": person.password}))
 
 
 def test_two_factor_belongs_to_one_workspace(workspace, clock):

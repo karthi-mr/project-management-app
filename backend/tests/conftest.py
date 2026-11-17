@@ -119,6 +119,7 @@ class Workspace:
         }), 201)
         self.admin = Person(Api(client, body["access_token"]), body["user"], self.password)
         self.org_id = body["user"]["org"]["id"]
+        self.public_id = body["user"]["org"]["public_id"]
         self.name = name
 
     def add_person(self, role: str = "member", full_name: str | None = None) -> Person:
@@ -128,7 +129,7 @@ class Workspace:
             "username": username, "full_name": full_name or username.title(), "email": f"{username}@example.com",
             "role": role, "password": "Temp#Pass123",
         }), 201)
-        first = ok(self.client.post("/api/auth/login", json={"username": username, "password": "Temp#Pass123"}))
+        first = ok(self.client.post("/api/auth/login", json={"workspace": self.public_id, "username": username, "password": "Temp#Pass123"}))
         changed = ok(Api(self.client, first["access_token"]).post("/api/auth/change-password", {
             "current_password": "Temp#Pass123", "new_password": MEMBER_PASSWORD,
         }))
@@ -156,7 +157,12 @@ def _reset_rate_limits():
 @pytest.fixture(scope="session")
 def owner(client) -> Person:
     """The platform owner (the first administrator), with the forced password change done."""
-    first = ok(client.post("/api/auth/login", json={"username": "admin", "password": "Admin@123"}))
+    workspaces = client.post("/api/auth/find-workspace", json={"email": "owner@example.com", "password": "Admin@123"})
+    password = "Admin@123" if workspaces.status_code == 200 else OWNER_PASSWORD
+    if workspaces.status_code != 200:
+        workspaces = client.post("/api/auth/find-workspace", json={"email": "owner@example.com", "password": OWNER_PASSWORD})
+    public_id = ok(workspaces)[0]["public_id"]
+    first = ok(client.post("/api/auth/login", json={"workspace": public_id, "username": "admin", "password": password}))
     if first["user"]["must_change_password"]:
         first = ok(Api(client, first["access_token"]).post("/api/auth/change-password", {
             "current_password": "Admin@123", "new_password": OWNER_PASSWORD,

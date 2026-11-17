@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, AtSign, Building2, Check, Mail, Eye, EyeOff, KeyRound, Lock, ShieldCheck, User } from 'lucide-react'
 import { api } from '../api'
 import { useAuth, useToast } from '../context'
@@ -7,6 +7,7 @@ import { Field, PasswordRules, Spinner, passwordValid } from '../ui'
 import ThemeToggle from '../components/ThemeToggle'
 import { useT } from '../i18n'
 import { CodeInput, TwoFactorSetup } from '../components/TwoFactor'
+import { rememberedWorkspace } from '../workspaceId'
 
 function AuthShell({ children, brand }) {
   useT()
@@ -67,16 +68,23 @@ export function Login() {
   const location = useLocation()
   const t = useT()
   const { slug } = useParams()
+  const [params] = useSearchParams()
   const [brand, setBrand] = useState(null)
+  // Which workspace: from a sign-in link (?workspace= or /w/acme), else the one used last on this device.
+  const fromLink = params.get('workspace') || slug || ''
+  const [workspace, setWorkspace] = useState(() => fromLink || rememberedWorkspace()?.id || '')
+  const [known, setKnown] = useState(() => (fromLink ? null : rememberedWorkspace()))
   // A workspace's own sign-in address (/w/acme) shows its name, logo and colour.
   useEffect(() => {
     if (!slug) return
     api(`/public/workspace/${slug}`).then((b) => {
       setBrand(b)
+      setWorkspace(b.public_id)
+      setKnown({ id: b.public_id, name: b.name })
       if (b.brand_color) document.documentElement.style.setProperty('--accent', b.brand_color)
     }).catch(() => {})
   }, [slug])
-  const [username, setUsername] = useState('')
+  const [username, setUsername] = useState(location.state?.username || '')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -86,7 +94,7 @@ export function Login() {
     setError('')
     setBusy(true)
     try {
-      const result = await login(username, password)
+      const result = await login(workspace, username, password)
       if (result.challenge) {
         setChallenge(result.challenge)
         setPassword('')
@@ -158,6 +166,32 @@ export function Login() {
       </div>
       <form onSubmit={submit}>
         {error && <div className="form-error">{error}</div>}
+        {known ? (
+          <div className="workspace-chip" role="group" aria-label={t('auth.workspace')}>
+            <Building2 size={16} />
+            <span className="grow">
+              <b>{known.name}</b>
+              <span className="small muted">{t('auth.workspace')} {known.id}</span>
+            </span>
+            <button type="button" className="link-btn" onClick={() => { setKnown(null); setWorkspace('') }}>Change</button>
+          </div>
+        ) : (
+          <Field label={t('auth.workspace')}>
+            <div className="input-icon">
+              <Building2 size={15} />
+              <input
+                className="input"
+                value={workspace}
+                onChange={(e) => setWorkspace(e.target.value)}
+                placeholder="e.g. 4821-7390"
+                autoComplete="organization"
+                inputMode="text"
+                autoFocus={!workspace}
+                required
+              />
+            </div>
+          </Field>
+        )}
         <Field label={t('auth.username')}>
           <div className="input-icon">
             <User size={15} />
@@ -167,7 +201,7 @@ export function Login() {
               onChange={(e) => setUsername(e.target.value)}
               placeholder="you@company.com"
               autoComplete="username"
-              autoFocus
+              autoFocus={Boolean(workspace)}
               required
             />
           </div>
@@ -179,8 +213,9 @@ export function Login() {
           {busy ? <Spinner /> : t('auth.signIn')}
         </button>
       </form>
-      <div className="auth-foot">
-        <Link to="/forgot-password">{t('auth.forgot')}</Link>
+      <div className="auth-foot stack" style={{ gap: 6 }}>
+        <Link to="/forgot-password" state={{ workspace }}>{t('auth.forgot')}</Link>
+        <Link to="/find-workspace">{t('auth.findWorkspace')}</Link>
       </div>
       <div className="auth-foot" style={{ marginTop: -8 }}>
         <span className="muted">{t('auth.new')}</span> <Link to="/signup">{t('auth.create')}</Link>
@@ -191,6 +226,7 @@ export function Login() {
 
 export function Signup() {
   const { setSession } = useAuth()
+  const toast = useToast()
   const navigate = useNavigate()
   const t = useT()
   const [form, setForm] = useState({ company: '', full_name: '', email: '', username: '', password: '', website: '', accept_terms: false })
@@ -209,7 +245,9 @@ export function Signup() {
     if (!passwordValid(form.password)) return setError('Choose a password that meets the rules below.')
     setBusy(true)
     try {
-      setSession(await api('/auth/register', { method: 'POST', body: form }))
+      const session = await api('/auth/register', { method: 'POST', body: form })
+      setSession(session)
+      toast(`Your workspace ID is ${session.user.org.public_id}. You and your team sign in with it; find it any time in your profile.`)
       navigate('/', { replace: true })
     } catch (err) {
       setError(err.message)
@@ -272,6 +310,9 @@ export function Signup() {
 }
 
 export function ForgotPassword() {
+  const location = useLocation()
+  const t = useT()
+  const [workspace, setWorkspace] = useState(() => location.state?.workspace || rememberedWorkspace()?.id || '')
   const [identifier, setIdentifier] = useState('')
   const [note, setNote] = useState('')
   const [message, setMessage] = useState('')
@@ -283,7 +324,7 @@ export function ForgotPassword() {
     setError('')
     setBusy(true)
     try {
-      const res = await api('/auth/forgot-password', { method: 'POST', body: { identifier, note } })
+      const res = await api('/auth/forgot-password', { method: 'POST', body: { workspace, identifier, note } })
       setMessage(res.message)
     } catch (err) {
       setError(err.message)
@@ -308,6 +349,12 @@ export function ForgotPassword() {
       ) : (
         <form onSubmit={submit}>
           {error && <div className="form-error">{error}</div>}
+          <Field label={t('auth.workspace')} hint={<Link to="/find-workspace">{t('auth.findWorkspace')}</Link>}>
+            <div className="input-icon">
+              <Building2 size={15} />
+              <input className="input" value={workspace} onChange={(e) => setWorkspace(e.target.value)} placeholder="e.g. 4821-7390" autoFocus={!workspace} required />
+            </div>
+          </Field>
           <Field label="Username or email">
             <div className="input-icon">
               <User size={15} />
@@ -316,7 +363,7 @@ export function ForgotPassword() {
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
                 autoComplete="username"
-                autoFocus
+                autoFocus={Boolean(workspace)}
                 required
               />
             </div>
@@ -333,6 +380,84 @@ export function ForgotPassword() {
           </Field>
           <button className="btn btn-primary btn-block" disabled={busy}>
             {busy ? <Spinner /> : 'Request password reset'}
+          </button>
+        </form>
+      )}
+      <div className="auth-foot">
+        <Link to="/login" className="row" style={{ justifyContent: 'center', gap: 6 }}>
+          <ArrowLeft size={14} /> Back to sign in
+        </Link>
+      </div>
+    </AuthShell>
+  )
+}
+
+/** Forgot the workspace ID: the email and password show which workspaces they open. */
+export function FindWorkspace() {
+  const navigate = useNavigate()
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [found, setFound] = useState(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setError('')
+    setBusy(true)
+    try {
+      setFound(await api('/auth/find-workspace', { method: 'POST', body: { email, password } }))
+      setPassword('')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <AuthShell>
+      <div>
+        <h1>Find your workspace</h1>
+        <p className="muted">
+          {found
+            ? 'Your email and password open these workspaces. Pick one to sign in.'
+            : 'Enter your email and password. We show the workspaces they open, with their IDs.'}
+        </p>
+      </div>
+      {found ? (
+        <div className="stack" style={{ gap: 8 }}>
+          {found.map((w) => (
+            <button
+              key={w.public_id}
+              type="button"
+              className="workspace-chip workspace-pick"
+              onClick={() => navigate(`/login?workspace=${w.public_id}`, { state: { username: w.username } })}
+            >
+              <Building2 size={16} />
+              <span className="grow">
+                <b>{w.name}</b>
+                <span className="small muted">Workspace ID {w.public_id}</span>
+              </span>
+              <span className="small">Sign in</span>
+            </button>
+          ))}
+          <p className="small muted">Note the ID down: this device remembers it after you sign in.</p>
+        </div>
+      ) : (
+        <form onSubmit={submit}>
+          {error && <div className="form-error">{error}</div>}
+          <Field label="Email">
+            <div className="input-icon">
+              <Mail size={15} />
+              <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" autoFocus required />
+            </div>
+          </Field>
+          <Field label="Password">
+            <PasswordInput value={password} onChange={setPassword} />
+          </Field>
+          <button className="btn btn-primary btn-block" disabled={busy}>
+            {busy ? <Spinner /> : 'Find my workspace'}
           </button>
         </form>
       )}

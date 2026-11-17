@@ -43,10 +43,16 @@ issue_dependencies = Table(
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        # The same username or email may exist in different workspaces as separate accounts;
+        # people sign in with their workspace ID to say which one they mean.
+        UniqueConstraint("org_id", "username", name="uq_users_org_username"),
+        UniqueConstraint("org_id", "email", name="uq_users_org_email"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    username: Mapped[str] = mapped_column(String(50), unique=True, index=True)
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    username: Mapped[str] = mapped_column(String(50), index=True)
+    email: Mapped[str] = mapped_column(String(255), index=True)
     full_name: Mapped[str] = mapped_column(String(120))
     role: Mapped[str] = mapped_column(String(20), default="member")  # admin | manager | member
     password_hash: Mapped[str] = mapped_column(String(255))
@@ -689,12 +695,25 @@ class Plan(Base):
     sort: Mapped[int] = mapped_column(Integer, default=0)
 
 
+def new_public_id() -> str:
+    import secrets
+
+    return str(10_000_000 + secrets.randbelow(90_000_000))
+
+
+def format_public_id(value: str | None) -> str:
+    """4821-7390: easier to read out and type than 48217390."""
+    return f"{value[:4]}-{value[4:]}" if value and len(value) == 8 else (value or "")
+
+
 class Organization(Base):
     """A customer workspace. Its license decides what it can use and until when."""
 
     __tablename__ = "organizations"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # The 8-digit number people type to sign in. Random, so customers cannot be counted or guessed.
+    public_id: Mapped[str | None] = mapped_column(String(8), nullable=True, unique=True, default=lambda: new_public_id())
     name: Mapped[str] = mapped_column(String(120))
     plan_id: Mapped[int | None] = mapped_column(ForeignKey("plans.id", ondelete="SET NULL"), nullable=True)
     seats: Mapped[int | None] = mapped_column(Integer, nullable=True)  # licensed users; None = unlimited

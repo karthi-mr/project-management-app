@@ -91,7 +91,7 @@ def test_owner_console_workspaces(workspace, owner, anon):
     assert overview["workspaces"] >= 2
 
     created = ok(owner.api.post("/api/platform/organizations", {"name": "Hand made", "admin_full_name": "Hana", "admin_email": f"{unique()}@example.com", "admin_username": unique("hana")}), 201)
-    session = ok(anon.post("/api/auth/login", {"username": created["username"], "password": created["temporary_password"]}))
+    session = ok(anon.post("/api/auth/login", {"workspace": created["organization"]["public_id"], "username": created["username"], "password": created["temporary_password"]}))
     assert session["user"]["must_change_password"]
 
     my_org = ok(owner.api.get("/api/auth/me"))["org"]["id"]

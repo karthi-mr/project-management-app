@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from sqlalchemy import Engine, create_engine, event, inspect
+from sqlalchemy import Engine, create_engine, event, inspect, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -90,6 +90,7 @@ ADDED_COLUMNS = {
         "ip_allowlist": "TEXT NOT NULL DEFAULT ''",
         "require_two_factor": "BOOLEAN NOT NULL DEFAULT FALSE",
         "hidden_modules": "TEXT NOT NULL DEFAULT ''",
+        "public_id": "VARCHAR(8)",
     },
     "license_requests": {
         "list_amount": "FLOAT",
@@ -129,6 +130,7 @@ def migrate(target: Engine | None = None) -> None:
     """Add columns introduced after the first release to an existing database."""
     eng = target or engine
     inspector = inspect(eng)
+    dialect = eng.dialect.name
     tables = set(inspector.get_table_names())
     with eng.begin() as conn:
         for table, columns in ADDED_COLUMNS.items():
@@ -172,6 +174,38 @@ def migrate(target: Engine | None = None) -> None:
                     conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_projects_org_id ON projects (org_id)")
         if "users" in tables and "ix_users_org_id" not in {ix["name"] for ix in inspector.get_indexes("users")}:
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_users_org_id ON users (org_id)")
+        # Usernames and emails used to be unique across the whole installation; now they are unique
+        # per workspace, so the same person can have an account in two workspaces.
+        if "users" in tables:
+            indexes = {ix["name"]: ix for ix in inspector.get_indexes("users")}
+            uniques = {uc["name"] for uc in inspector.get_unique_constraints("users")}
+            for column in ("username", "email"):
+                name = f"ix_users_{column}"
+                if indexes.get(name, {}).get("unique"):
+                    conn.exec_driver_sql(f"DROP INDEX {name}")
+                    conn.exec_driver_sql(f"CREATE INDEX {name} ON users ({column})")
+                for uc in inspector.get_unique_constraints("users"):
+                    # A plain UNIQUE on the column alone (rather than an index) is dropped as well.
+                    if uc["column_names"] == [column] and uc["name"] and dialect != "sqlite":
+                        conn.exec_driver_sql('ALTER TABLE users DROP CONSTRAINT "%s"' % uc["name"])
+                target = f"uq_users_org_{column}"
+                if target not in indexes and target not in uniques:
+                    conn.exec_driver_sql(f"CREATE UNIQUE INDEX {target} ON users (org_id, {column})")
+        # Every workspace has a random 8-digit ID that people type to sign in.
+        if "organizations" in tables:
+            from .models import new_public_id
+
+            taken = {row[0] for row in conn.exec_driver_sql("SELECT public_id FROM organizations WHERE public_id IS NOT NULL")}
+            for (org_id,) in conn.exec_driver_sql("SELECT id FROM organizations WHERE public_id IS NULL ORDER BY id").fetchall():
+                value = new_public_id()
+                while value in taken:
+                    value = new_public_id()
+                taken.add(value)
+                conn.execute(text("UPDATE organizations SET public_id = :v WHERE id = :i"), {"v": value, "i": org_id})
+            indexes = {ix["name"] for ix in inspector.get_indexes("organizations")}
+            uniques = {uc["name"] for uc in inspector.get_unique_constraints("organizations")}
+            if not any("public_id" in (n or "") for n in indexes | uniques):
+                conn.exec_driver_sql("CREATE UNIQUE INDEX uq_organizations_public_id ON organizations (public_id)")
 
 
 def get_db():
