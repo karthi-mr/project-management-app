@@ -213,8 +213,14 @@ def export_workspace(request: Request, admin: User = Depends(require_admin), db:
         "exported_at": dt(utcnow()),
         "workspace": {"name": org.name, "plan": org.plan.name if org.plan else None, "created_at": dt(org.created_at)},
     }
-    secret = {"password_hash", "token_version", "preferences"}
-    data["users"] = [{k: v for k, v in row.items() if k not in secret} for row in _rows(db, tables["users"], tables["users"].c.id, user_ids)]
+    # Only these fields leave the system. Listing what is allowed (rather than what is hidden) means a
+    # column added later, such as a secret, is never exported by accident.
+    exported = ("id", "username", "email", "full_name", "role", "is_active", "must_change_password", "created_at",
+                "last_login", "avatar_color", "avatar_url", "hourly_rate", "weekly_capacity", "terms_accepted_at")
+    data["users"] = [
+        {**{k: row.get(k) for k in exported}, "two_factor_enabled": row.get("totp_enabled_at") is not None}
+        for row in _rows(db, tables["users"], tables["users"].c.id, user_ids)
+    ]
     data["projects"] = _rows(db, tables["projects"], tables["projects"].c.id, project_ids)
     skip = {"users", "projects", "files", "notifications", "share_links", "automation_runs"}
     for name, table in sorted(tables.items()):
