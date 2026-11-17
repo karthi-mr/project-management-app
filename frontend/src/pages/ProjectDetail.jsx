@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { FlaskConical, Activity, BarChart3, CalendarDays, ChevronLeft, Columns3, FileText, Flag, GanttChart, Layers, LayoutDashboard, List, Plus, Rocket, Search, Settings, ShieldAlert, Stamp, Users, Zap } from 'lucide-react'
+import { Boxes, FlaskConical, Activity, BarChart3, CalendarDays, ChevronLeft, Columns3, FileText, Flag, GanttChart, Layers, LayoutDashboard, List, Plus, Rocket, Search, Settings, ShieldAlert, Stamp, Users, Zap } from 'lucide-react'
 import { api, notifyChanged, onChanged } from '../api'
 import { useAuth, useToast } from '../context'
 import { useUndoDelete } from '../components/useUndo'
@@ -16,12 +16,14 @@ import { ClientFeedbackCard } from '../components/ProjectSharing'
 import Tests from './Tests'
 import { EMPTY_FILTERS, applyFilters, FilterBar, Board, IssueTable } from './project/IssueViews'
 import { Milestones } from './project/Milestones'
+import { Modules } from './project/Modules'
 import { Members, ActivityFeed } from './project/Team'
 import { ProjectSettings } from './project/ProjectSettings'
 
 const TABS = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
   { key: 'features', label: 'Features', icon: Layers },
+  { key: 'modules', label: 'Modules', icon: Boxes },
   { key: 'board', label: 'Board', icon: Columns3 },
   { key: 'list', label: 'List', icon: List },
   { key: 'timeline', label: 'Timeline', icon: GanttChart },
@@ -40,7 +42,7 @@ const TABS = [
 
 // Tabs are grouped so a project with every section enabled stays easy to scan.
 const TAB_GROUPS = [
-  { key: 'plan', label: 'Plan', tabs: ['overview', 'features', 'milestones', 'timeline'] },
+  { key: 'plan', label: 'Plan', tabs: ['overview', 'features', 'modules', 'milestones', 'timeline'] },
   { key: 'work', label: 'Work', tabs: ['board', 'list', 'sprints', 'tests', 'docs'] },
   { key: 'deliver', label: 'Deliver', tabs: ['releases', 'approvals', 'risks', 'reports'] },
   { key: 'team', label: 'Team', tabs: ['members', 'activity', 'settings'] },
@@ -49,7 +51,7 @@ const TAB_GROUPS = [
 // Which permission each tab needs (tabs not listed are always shown).
 const TAB_SECTION = {
   tests: 'features',
-  features: 'features', board: 'issues', list: 'issues', timeline: 'issues', sprints: 'issues', milestones: 'milestones',
+  features: 'features', modules: 'features', board: 'issues', list: 'issues', timeline: 'issues', sprints: 'issues', milestones: 'milestones',
   releases: 'releases', risks: 'risks', docs: 'docs', reports: 'reports', activity: 'activity',
 }
 
@@ -270,6 +272,7 @@ export default function ProjectDetail() {
       {tab === 'docs' && <Documents key={project.id} project={project} />}
       {tab === 'reports' && <Reports project={project} issues={issues} features={features} milestones={milestones} risks={risks} />}
       {tab === 'milestones' && <Milestones project={project} milestones={milestones} reload={load} />}
+      {tab === 'modules' && <Modules project={project} features={features} milestones={milestones} onOpenFeature={setFeatureParam} reload={load} />}
       {tab === 'members' && <Members project={project} issues={issues} reload={load} />}
       {tab === 'activity' && <ActivityFeed projectId={project.id} />}
       {tab === 'settings' && <ProjectSettings key={project.id} project={project} issues={issues} reload={load} />}

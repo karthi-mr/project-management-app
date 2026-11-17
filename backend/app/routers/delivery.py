@@ -537,7 +537,7 @@ def decide(approval_id: int, data: DecisionIn, user: User = Depends(get_current_
 
 
 class SignoffIn(BaseModel):
-    target_type: Literal["feature", "milestone"]
+    target_type: Literal["feature", "module", "milestone"]
     target_id: int
     note: str = Field(default="", max_length=5000)
     approver_id: int | None = None  # None = the owner and every manager; the first to answer decides
@@ -547,9 +547,11 @@ class SignoffIn(BaseModel):
 @router.post("/projects/{project_id}/signoffs", status_code=201)
 def request_signoff(project_id: int, data: SignoffIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Ask for the current stage of a feature or milestone to be signed off, or sign it off."""
-    project = get_project(db, project_id, user, section="features" if data.target_type == "feature" else "milestones")
+    project = get_project(db, project_id, user, section="milestones" if data.target_type == "milestone" else "features")
     require_feature(db, user, "approvals")
-    model = Feature if data.target_type == "feature" else Milestone
+    from ..models import ProjectModule
+
+    model = {"feature": Feature, "module": ProjectModule, "milestone": Milestone}[data.target_type]
     # Lock the row so two clicks at the same moment cannot both create a request.
     obj = db.get(model, data.target_id, with_for_update=True)
     if not obj or obj.project_id != project.id:

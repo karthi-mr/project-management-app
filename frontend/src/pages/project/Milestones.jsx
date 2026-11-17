@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CalendarDays, Flag, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Boxes, CalendarDays, Flag, Pencil, Plus, Trash2 } from 'lucide-react'
 import { api, onChanged } from '../../api'
 import { useConfirm, useToast } from '../../context'
 import { useUndoDelete } from '../../components/useUndo'
@@ -113,6 +113,15 @@ export function Milestones({ project, milestones, reload }) {
                 <Badge color={byKey(MILESTONE_STAGES, m.stage).color}>{byKey(MILESTONE_STAGES, m.stage).label}</Badge>
               </div>
               {m.description && <p className="muted small">{m.description}</p>}
+              {m.modules?.length > 0 && (
+                <div className="row row-wrap" style={{ gap: 5 }}>
+                  {m.modules.map((mod) => (
+                    <span className="tag module-tag" key={`m${mod.id}`} title={`Module · ${byKey(FEATURE_STAGES, mod.stage).label}`}>
+                      <Boxes size={11} /> {mod.name} · {byKey(FEATURE_STAGES, mod.stage).label}
+                    </span>
+                  ))}
+                </div>
+              )}
               {m.features.length > 0 && (
                 <div className="row row-wrap" style={{ gap: 5 }}>
                   {m.features.map((f) => (

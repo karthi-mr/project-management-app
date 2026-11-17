@@ -48,6 +48,7 @@ class FeatureCreate(BaseModel):
     owner_id: int | None = None
     release_id: int | None = None
     milestone_id: int | None = None
+    module_id: int | None = None
     start_date: date | None = None
     target_date: date | None = None
 
@@ -61,6 +62,7 @@ class FeatureUpdate(BaseModel):
     owner_id: int | None = None
     release_id: int | None = None
     milestone_id: int | None = None
+    module_id: int | None = None
     start_date: date | None = None
     target_date: date | None = None
 
@@ -92,6 +94,24 @@ def _check_owner(project: Project, owner_id: int | None):
         return
     if all(m.id != owner_id for m in project.members) and project.owner_id != owner_id:
         raise HTTPException(422, "Owner must be a member of the project")
+
+
+def _check_module(db: Session, project: Project, module_id: int | None):
+    if module_id is None:
+        return None
+    from ..models import ProjectModule
+
+    module = db.get(ProjectModule, module_id)
+    if not module or module.project_id != project.id:
+        raise HTTPException(422, "Module not found in this project")
+    return module
+
+
+def _milestone_from_module(module, milestone_id_given: bool, milestone_id) -> int | None:
+    """A feature in a module is part of the module's milestone."""
+    if milestone_id_given and milestone_id is not None and milestone_id != module.milestone_id:
+        raise HTTPException(422, f"This feature's milestone comes from its module “{module.name}”. Change the module's milestone instead.")
+    return module.milestone_id
 
 
 def _check_milestone(db: Session, project: Project, milestone_id: int | None):
@@ -158,17 +178,21 @@ def create_feature(
     _check_owner(project, data.owner_id)
     _check_release(db, project, data.release_id)
     _check_milestone(db, project, data.milestone_id)
+    module = _check_module(db, project, data.module_id)
     _check_dates(data.start_date, data.target_date)
     from .. import signoff
 
     if not signoff.initial_stage_allowed(db, project, user, "feature", data.stage):
         raise HTTPException(409, "New features start as proposed or planned. Later stages need a sign-off.")
-    feature = Feature(project_id=project.id, **data.model_dump())
+    values = data.model_dump()
+    if module is not None:
+        values["milestone_id"] = _milestone_from_module(module, "milestone_id" in data.model_fields_set, data.milestone_id)
+    feature = Feature(project_id=project.id, **values)
     feature.title = feature.title.strip()
     db.add(feature)
     db.flush()
     log_activity(db, project.id, user, f"added feature “{feature.title}”")
-    signoff.sync_milestones(db, project, [feature.milestone_id], user)
+    signoff.sync_for_features(db, project, [feature], user)
     from .delivery import watch
 
     watch(db, user.id, feature_id=feature.id)
@@ -214,8 +238,12 @@ def update_feature(
     if "release_id" in fields:
         _check_release(db, project, fields["release_id"])
     old_milestone_id = feature.milestone_id
+    old_module_id = feature.module_id
     if "milestone_id" in fields:
         _check_milestone(db, project, fields["milestone_id"])
+    module = _check_module(db, project, fields["module_id"]) if "module_id" in fields else feature.module
+    if module is not None:
+        fields["milestone_id"] = _milestone_from_module(module, "milestone_id" in fields, fields.get("milestone_id"))
     new_stage = fields.pop("stage", None)
     if new_stage and new_stage != feature.stage:
         from .. import signoff
@@ -229,11 +257,12 @@ def update_feature(
         setattr(feature, name, value.strip() if name == "title" else value)
     _check_dates(feature.start_date, feature.target_date)
     feature.updated_at = utcnow()
-    if feature.milestone_id != old_milestone_id:
+    if feature.milestone_id != old_milestone_id or feature.module_id != old_module_id:
         from .. import signoff
 
         db.flush()
-        # Both the milestone it left and the one it joined follow their features.
+        # The modules and milestones it left and joined all follow their features.
+        signoff.sync_modules(db, project, [old_module_id, feature.module_id], user)
         signoff.sync_milestones(db, project, [old_milestone_id, feature.milestone_id], user)
     db.commit()
     return feature_out(feature)
@@ -248,6 +277,9 @@ def delete_feature(
         raise HTTPException(403, "Only the feature owner, project owner or an administrator can delete this")
     log_activity(db, feature.project_id, user, f"deleted feature “{feature.title}”")
     soft_delete(feature, user)  # recoverable from the recycle bin for 30 days
+    from .. import signoff
+
+    signoff.sync_for_features(db, feature.project, [feature], user)  # its module and milestone may move on now
     db.commit()
 
 

@@ -569,3 +569,29 @@ Resource planning (2) and Advanced security (3). An add-on the plan already incl
 - **Upgrading** an existing installation changes the built-in plans only if you never edited them, and
   workspaces that already existed keep, free of charge, the add-ons for features every workspace used to
   have (client portal, time tracking, test management, portfolio).
+
+## Modules
+
+A **module** is a part of the product made of several features (for example "Payments" with card,
+UPI and refund features). A **milestone** holds several modules and can also hold features of its own.
+Modules are on the project's *Plan → Modules* tab.
+
+- **Sign-off for everything.** A module goes through the same stages as a feature (Proposed → … →
+  Released), one stage at a time, and every step needs an approved sign-off from the project owner or
+  a manager. Nothing moves to the next stage without it.
+- **Features → module.** When every feature of a module has been signed off past a stage, the module
+  moves on by itself (the features' sign-offs are its approval). A module is never ahead of its
+  features: adding a feature that is further behind, or moving a feature back, takes the module back.
+- **Module → features.** Signing off a module's stage signs off, in the same step, its features that
+  are at that stage. Moving a module back moves its features back.
+- **Milestones** follow all their features, including those in their modules, the same way.
+- A feature in a module is always part of the module's milestone; move the module to move them all.
+  Deleting a module keeps its features, in the same milestone.
+
+The workspace switches that hide parts of the app (Workspace settings) are now called *Optional tools*.
+
+## Time on features
+
+Time can be logged on a feature itself (design, analysis, reviews) as well as on its issues. A feature
+shows its total hours and, for the project owner and administrators, its cost; the project budget
+breaks the cost down by feature; timesheets and workload include this time.

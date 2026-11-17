@@ -263,3 +263,35 @@ test('time logged on a feature shows on the feature and in the budget by feature
   await expect(budget.locator('.time-row', { hasText: 'Loyalty points' })).toContainText('₹3,000')
   errors.check()
 })
+
+test('a module groups features and signing it off moves its features too', async ({ page, request }) => {
+  const errors = watchErrors(page)
+  const ws = await signUp(request)
+  const project = await call(request, ws.token, 'POST', '/api/projects', { name: 'Shop app', key: 'SHP' })
+  const beta = await call(request, ws.token, 'POST', `/api/projects/${project.id}/milestones`, { name: 'Beta' })
+  const card = await call(request, ws.token, 'POST', `/api/projects/${project.id}/features`, { title: 'Card payments', stage: 'proposed' })
+  const upi = await call(request, ws.token, 'POST', `/api/projects/${project.id}/features`, { title: 'UPI payments', stage: 'proposed' })
+
+  await signInAs(page, ws.token)
+  await page.goto(`/projects/${project.id}?tab=modules`)
+  await page.getByRole('button', { name: 'New module' }).first().click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('Module name').fill('Payments')
+  await dialog.getByLabel('Milestone').selectOption({ label: 'Beta' })
+  await dialog.getByRole('checkbox', { name: /Card payments/ }).check()
+  await dialog.getByRole('checkbox', { name: /UPI payments/ }).check()
+  await dialog.getByRole('button', { name: 'Add module' }).click()
+
+  const moduleCard = page.locator('.module-card', { hasText: 'Payments' })
+  await expect(moduleCard.getByText('Card payments · Proposed')).toBeVisible()
+  await moduleCard.getByRole('button', { name: 'Sign off Proposed' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Sign off' }).click()
+  await expect(moduleCard.getByText('UPI payments · Planned')).toBeVisible()
+  await expect(moduleCard.getByRole('button', { name: 'Sign off Planned' })).toBeVisible()
+  for (const f of [card, upi]) {
+    expect((await call(request, ws.token, 'GET', `/api/features/${f.id}`)).milestone_id).toBe(beta.id)
+  }
+  await page.goto(`/projects/${project.id}?tab=milestones`)
+  await expect(page.locator('.module-tag', { hasText: 'Payments · Planned' })).toBeVisible()
+  errors.check()
+})

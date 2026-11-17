@@ -171,6 +171,7 @@ class Milestone(Base):
     project: Mapped[Project] = relationship(back_populates="milestones")
     issues: Mapped[list["Issue"]] = relationship(back_populates="milestone")
     features: Mapped[list["Feature"]] = relationship(back_populates="milestone")
+    modules: Mapped[list["ProjectModule"]] = relationship(back_populates="milestone")
 
 
 class Issue(Base):
@@ -317,16 +318,48 @@ class Feature(Base):
     milestone_id: Mapped[int | None] = mapped_column(
         ForeignKey("milestones.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # The module this feature belongs to. A feature in a module is part of the module's milestone.
+    module_id: Mapped[int | None] = mapped_column(
+        ForeignKey("project_modules.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     target_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     project: Mapped[Project] = relationship(back_populates="features")
+    module: Mapped["ProjectModule | None"] = relationship(back_populates="features")
     owner: Mapped[User | None] = relationship(foreign_keys=[owner_id])
     release: Mapped[Release | None] = relationship(back_populates="features")
     milestone: Mapped["Milestone | None"] = relationship(back_populates="features")
     issues: Mapped[list[Issue]] = relationship(back_populates="feature")
+
+
+class ProjectModule(Base):
+    """A part of the product made of several features (for example "Payments"). It goes through the
+    same stages as its features, with sign-off, and moves together with them (see signoff.py). A
+    milestone can hold several modules as well as features of its own."""
+
+    __tablename__ = "project_modules"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(Text, default="")
+    stage: Mapped[str] = mapped_column(String(20), default="proposed")
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    milestone_id: Mapped[int | None] = mapped_column(ForeignKey("milestones.id", ondelete="SET NULL"), nullable=True, index=True)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    target_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    project: Mapped[Project] = relationship()
+    owner: Mapped[User | None] = relationship()
+    milestone: Mapped["Milestone | None"] = relationship(back_populates="modules")
+    features: Mapped[list["Feature"]] = relationship(back_populates="module")
+
+    deleted_at = None  # modules are deleted outright; their features stay
 
 
 class Notification(Base):

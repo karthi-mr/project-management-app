@@ -471,16 +471,16 @@ export function StageSignoff({ project, type, item, onChanged, compact = false, 
   const [note, setNote] = useState('')
   const [askWho, setAskWho] = useState('')
   const [busy, setBusy] = useState(false)
-  const stages = type === 'feature' ? FEATURE_STAGES : MILESTONE_STAGES
+  const stages = type === 'milestone' ? MILESTONE_STAGES : FEATURE_STAGES
   if (!project.signoff_gated) return null
   const pending = item.signoff
   const current = byKey(stages, item.stage)
   const next = item.next_stage ? byKey(stages, item.next_stage) : null
   const name = type === 'feature' ? item.title : item.name
-  const canEdit = project.can_edit && project.sections.includes(type === 'feature' ? 'features' : 'milestones')
+  const canEdit = project.can_edit && project.sections.includes(type === 'milestone' ? 'milestones' : 'features')
   const checks = item.checklist || []
   const missing = checks.filter((c) => !c.done).length
-  const gate = type === 'milestone' ? item.feature_gate : null
+  const gate = type === 'milestone' || type === 'module' ? item.feature_gate : null
   const behind = gate?.behind?.length || 0
   const blockedTitle = missing
     ? `Finish the ${current.label} checklist first (${missing} left)`
@@ -576,7 +576,7 @@ export function StageSignoff({ project, type, item, onChanged, compact = false, 
         <div className="small muted">
           {gate.signed_off} of {gate.total} {gate.total === 1 ? 'feature' : 'features'} signed off for {current.label}.{' '}
           {behind > 0
-            ? <span className="danger-text">{gate.behind.map((f) => f.title).join(', ')} {behind === 1 ? 'is' : 'are'} still behind, so this milestone waits.</span>
+            ? <span className="danger-text">{gate.behind.map((f) => f.title).join(', ')} {behind === 1 ? 'is' : 'are'} still behind, so this {type} waits.</span>
             : next ? 'It moves on by itself when all are, or sign it off here to sign off the remaining features with it.' : ''}
         </div>
       )}

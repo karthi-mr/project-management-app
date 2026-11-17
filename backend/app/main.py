@@ -20,7 +20,7 @@ from .access import request_agent, request_ip, request_method, request_path
 from . import saas
 from .models import Conversation, Organization, Plan
 from .realtime import hub
-from .routers import auth, billing, chat, delivery, extras, growth, quality, issues, planning, platform, projects, users, workspace
+from .routers import auth, billing, chat, delivery, extras, growth, quality, issues, modules, planning, platform, projects, users, workspace
 from . import automation
 from .trash import purge_expired
 from .security import ALGORITHM, SECRET_KEY, hash_password
@@ -122,6 +122,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(projects.router)
+app.include_router(modules.router)
 app.include_router(issues.router)
 app.include_router(planning.router)
 app.include_router(extras.router)

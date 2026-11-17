@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { CalendarDays, Columns3, Flag, Layers, List, Pencil, Plus, Rocket, Search, Stamp, Trash2 } from 'lucide-react'
+import { Boxes, CalendarDays, Columns3, Flag, Layers, List, Pencil, Plus, Rocket, Search, Stamp, Trash2 } from 'lucide-react'
 import { api, notifyChanged } from '../api'
 import { useAuth, useConfirm, useToast } from '../context'
 import { useUndoDelete } from '../components/useUndo'
@@ -39,12 +39,16 @@ export function FeatureModal({ project, featureId, releases, onClose }) {
   const [feature, setFeature] = useState(null)
   const [form, setForm] = useState({
     title: '', description: '', acceptance_criteria: '', stage: 'planned', priority: 'medium',
-    owner_id: '', release_id: '', milestone_id: '', start_date: '', target_date: '',
+    owner_id: '', release_id: '', milestone_id: '', module_id: '', start_date: '', target_date: '',
   })
   const [milestones, setMilestones] = useState([])
+  const [modules, setModules] = useState([])
   useEffect(() => {
     if (project.sections.includes('milestones')) api(`/projects/${project.id}/milestones`).then(setMilestones).catch(() => {})
+    api(`/projects/${project.id}/modules`).then(setModules).catch(() => {})
   }, [project.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  // A feature in a module is part of the module's milestone.
+  const inModule = modules.find((m) => m.id === Number(form.module_id))
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [addingIssue, setAddingIssue] = useState(false)
@@ -76,6 +80,7 @@ export function FeatureModal({ project, featureId, releases, onClose }) {
         owner_id: data.owner?.id || '',
         release_id: data.release_id || '',
         milestone_id: data.milestone_id || '',
+        module_id: data.module_id || '',
         start_date: data.start_date || '',
         target_date: data.target_date || '',
       })
@@ -95,9 +100,11 @@ export function FeatureModal({ project, featureId, releases, onClose }) {
       owner_id: form.owner_id ? Number(form.owner_id) : null,
       release_id: form.release_id ? Number(form.release_id) : null,
       milestone_id: form.milestone_id ? Number(form.milestone_id) : null,
+      module_id: form.module_id ? Number(form.module_id) : null,
       start_date: form.start_date || null,
       target_date: form.target_date || null,
     }
+    if (inModule) delete body.milestone_id // it comes from the module
     // With sign-offs on, the stage only changes through a sign-off, never by saving this form.
     if (!isNew && project.signoff_gated) delete body.stage
     try {
@@ -181,8 +188,14 @@ export function FeatureModal({ project, featureId, releases, onClose }) {
                   {releases.map((r) => <option key={r.id} value={r.id}>{r.version} ({byKey(ENVIRONMENTS, r.environment).label})</option>)}
                 </select>
               </Field>
-              <Field label="Milestone" hint={project.signoff_gated ? 'The milestone moves on when all its features are signed off.' : undefined}>
-                <select className="select" value={form.milestone_id} onChange={set('milestone_id')}>
+              <Field label="Module" hint={project.signoff_gated ? 'The module moves on when all its features are signed off.' : undefined}>
+                <select className="select" value={form.module_id} onChange={set('module_id')}>
+                  <option value="">No module</option>
+                  {modules.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+              </Field>
+              <Field label="Milestone" hint={inModule ? `Comes from the module “${inModule.name}”.` : project.signoff_gated ? 'The milestone moves on when all its features are signed off.' : undefined}>
+                <select className="select" value={inModule ? (inModule.milestone_id || '') : form.milestone_id} onChange={set('milestone_id')} disabled={Boolean(inModule)}>
                   <option value="">No milestone</option>
                   {milestones.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                 </select>
@@ -421,6 +434,7 @@ export function Features({ project, features, onOpen, onCreate }) {
                       </span>
                     )}
                     {f.release_version && <span className="tag"><Rocket size={11} /> {f.release_version}</span>}
+                    {f.module_name && <span className="tag module-tag" title="Module"><Boxes size={11} /> {f.module_name}</span>}
                     {f.milestone_name && <span className="tag" title="Milestone"><Flag size={11} /> {f.milestone_name}</span>}
                   </div>
                 </div>

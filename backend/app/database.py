@@ -64,7 +64,8 @@ ADDED_COLUMNS = {
         "weekly_capacity": "FLOAT NOT NULL DEFAULT 40",
     },
     "time_entries": {"rate": "FLOAT", "feature_id": "INTEGER REFERENCES features(id) ON DELETE CASCADE"},
-    "features": {"milestone_id": "INTEGER REFERENCES milestones(id) ON DELETE SET NULL"},
+    "features": {"milestone_id": "INTEGER REFERENCES milestones(id) ON DELETE SET NULL",
+                 "module_id": "INTEGER REFERENCES project_modules(id) ON DELETE SET NULL"},
     "conversations": {
         "name": "VARCHAR(80)",
         "created_by_id": "INTEGER REFERENCES users(id) ON DELETE SET NULL",
@@ -194,6 +195,8 @@ def migrate(target: Engine | None = None) -> None:
                 target = f"uq_users_org_{column}"
                 if target not in indexes and target not in uniques:
                     conn.exec_driver_sql(f"CREATE UNIQUE INDEX {target} ON users (org_id, {column})")
+        if "features" in tables:
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_features_module_id ON features (module_id)")
         # Time can be logged straight on a feature, so a time entry no longer always has an issue.
         if "time_entries" in tables:
             _issue_optional_on_time_entries(conn, dialect)

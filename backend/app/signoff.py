@@ -20,7 +20,10 @@ from .saas import has_feature
 
 FEATURE_STAGES = ("proposed", "planned", "design", "development", "testing", "deployment", "released")
 MILESTONE_STAGES = ("planned", "design", "development", "testing", "deployment", "completed")
-STAGES = {"feature": FEATURE_STAGES, "milestone": MILESTONE_STAGES}
+# A module groups features and goes through the same stages as they do.
+STAGES = {"feature": FEATURE_STAGES, "module": FEATURE_STAGES, "milestone": MILESTONE_STAGES}
+# Items that are made of features: never ahead of their features, and moving them moves the features.
+CONTAINERS = ("module", "milestone")
 APPROVER_ROLES = ("manager",)
 
 
@@ -75,7 +78,7 @@ def next_stage(target_type: str, stage: str) -> str | None:
 
 
 def label(target_type: str, obj) -> str:
-    return f"feature “{obj.title}”" if target_type == "feature" else f"milestone “{obj.name}”"
+    return f"feature “{obj.title}”" if target_type == "feature" else f"{target_type} “{obj.name}”"
 
 
 def pending_for(db: Session, target_type: str, target_id: int) -> Approval | None:
@@ -106,7 +109,7 @@ def state(db: Session, target_type: str, obj) -> dict:
     return {
         "next_stage": next_stage(target_type, obj.stage),
         "checklist": checklist(db, target_type, obj),
-        "feature_gate": _gate_out(obj) if target_type == "milestone" else None,
+        "feature_gate": _gate_out(target_type, obj) if target_type in CONTAINERS else None,
         "signoff": {
             "id": pending.id, "stage": pending.stage, "to_stage": pending.to_stage,
             "requester": brief(pending.requester), "note": pending.note,
@@ -123,8 +126,8 @@ def state(db: Session, target_type: str, obj) -> dict:
     }
 
 
-def _gate_out(milestone) -> dict | None:
-    gate = milestone_gate(milestone)
+def _gate_out(container: str, obj) -> dict | None:
+    gate = container_gate(container, obj)
     if not gate:
         return None
     return {"total": gate["total"], "signed_off": gate["signed_off"], "behind": gate["behind"], "at_stage": len(gate["at_stage"])}
@@ -248,35 +251,42 @@ def _log(db: Session, project_id: int, actor: User | None, message: str):
 # "planned", and "released" corresponds to "completed".
 
 
-def feature_level(feature) -> int:
-    """Position of a feature on the milestone scale: proposed = -1, planned = 0 … released = 5."""
-    return (FEATURE_STAGES.index(feature.stage) if feature.stage in FEATURE_STAGES else 0) - 1
+def feature_level(feature, container: str = "milestone") -> int:
+    """Position of a feature on a container's scale. A module uses the feature stages as they are;
+    on the milestone scale proposed = -1, planned = 0 … released = 5."""
+    index = FEATURE_STAGES.index(feature.stage) if feature.stage in FEATURE_STAGES else 0
+    return index - 1 if container == "milestone" else index
 
 
-def linked_features(milestone) -> list:
-    return [f for f in milestone.features if f.deleted_at is None]
+def linked_features(obj) -> list:
+    return [f for f in obj.features if f.deleted_at is None]
 
 
-def milestone_gate(milestone) -> dict | None:
-    """How the milestone's features stand against its current stage."""
-    features = linked_features(milestone)
+def container_gate(container: str, obj) -> dict | None:
+    """How a module's or milestone's features stand against its current stage."""
+    features = linked_features(obj)
     if not features:
         return None
-    current = MILESTONE_STAGES.index(milestone.stage) if milestone.stage in MILESTONE_STAGES else 0
+    stages = STAGES[container]
+    current = stages.index(obj.stage) if obj.stage in stages else 0
     return {
         "total": len(features),
-        "signed_off": sum(1 for f in features if feature_level(f) > current),
-        "behind": [{"id": f.id, "title": f.title, "stage": f.stage} for f in features if feature_level(f) < current],
-        "at_stage": [f for f in features if feature_level(f) == current],
+        "signed_off": sum(1 for f in features if feature_level(f, container) > current),
+        "behind": [{"id": f.id, "title": f.title, "stage": f.stage} for f in features if feature_level(f, container) < current],
+        "at_stage": [f for f in features if feature_level(f, container) == current],
     }
 
 
-def require_features_ready(milestone) -> None:
-    gate = milestone_gate(milestone)
+def milestone_gate(milestone) -> dict | None:
+    return container_gate("milestone", milestone)
+
+
+def require_features_ready(obj, container: str = "milestone") -> None:
+    gate = container_gate(container, obj)
     if gate and gate["behind"]:
         first = gate["behind"][0]
         more = f" and {len(gate['behind']) - 1} more" if len(gate["behind"]) > 1 else ""
-        raise HTTPException(409, f"Feature “{first['title']}” is still in {first['stage']}{more}. Sign off the features of this milestone first.")
+        raise HTTPException(409, f"Feature “{first['title']}” is still in {first['stage']}{more}. Sign off the features of this {container} first.")
 
 
 def _approved_record(db: Session, project: Project, target_type: str, obj, to_stage: str, actor: User | None, note: str) -> None:
@@ -296,46 +306,80 @@ def _approved_record(db: Session, project: Project, target_type: str, obj, to_st
     db.flush()
 
 
-def sync_milestones(db: Session, project: Project, milestone_ids, actor: User | None) -> None:
-    """Bring milestones in line with their features after a feature moved or was (un)linked."""
+def _model(container: str):
+    from .models import ProjectModule
+
+    return {"feature": Feature, "module": ProjectModule, "milestone": Milestone}[container]
+
+
+def sync_containers(db: Session, project: Project, container: str, ids, actor: User | None) -> None:
+    """Bring modules or milestones in line with their features after a feature moved or was (un)linked:
+    when every feature is signed off past a stage the container follows on its own, and it never
+    stays ahead of its features."""
     if not gated(db, project):
         return
-    for milestone_id in {m for m in milestone_ids if m}:
-        milestone = db.get(Milestone, milestone_id)
-        if milestone is None or milestone.deleted_at is not None:
+    stages = STAGES[container]
+    for obj_id in {i for i in ids if i}:
+        obj = db.get(_model(container), obj_id)
+        if obj is None or getattr(obj, "deleted_at", None) is not None:
             continue
-        db.refresh(milestone, ["features"])
-        features = linked_features(milestone)
+        db.refresh(obj, ["features"])
+        features = linked_features(obj)
         if not features:
             continue
-        target = max(0, min(feature_level(f) for f in features))
-        current = MILESTONE_STAGES.index(milestone.stage) if milestone.stage in MILESTONE_STAGES else 0
+        target = max(0, min(feature_level(f, container) for f in features))
+        current = stages.index(obj.stage) if obj.stage in stages else 0
         while current < target:
-            if any(not c["done"] for c in checklist(db, "milestone", milestone)):
-                break  # the milestone's own checklist still has open lines; it follows once they are ticked
-            to_stage = MILESTONE_STAGES[current + 1]
-            _approved_record(db, project, "milestone", milestone, to_stage, actor,
-                             "Automatic: every feature of this milestone was signed off")
-            set_stage(db, project, "milestone", milestone, to_stage, actor, sync=False)
+            if any(not c["done"] for c in checklist(db, container, obj)):
+                break  # its own checklist still has open lines; it follows once they are ticked
+            to_stage = stages[current + 1]
+            _approved_record(db, project, container, obj, to_stage, actor,
+                             f"Automatic: every feature of this {container} was signed off")
+            set_stage(db, project, container, obj, to_stage, actor, sync=False)
             current += 1
         if current > target:
-            set_stage(db, project, "milestone", milestone, MILESTONE_STAGES[target], actor, sync=False)
+            set_stage(db, project, container, obj, stages[target], actor, sync=False)
 
 
-def _carry_features_forward(db: Session, project: Project, milestone, from_index: int, actor: User) -> None:
-    """A milestone sign-off also signs off the features that were at that stage."""
-    for feature in linked_features(milestone):
-        if feature_level(feature) == from_index:
-            to_stage = FEATURE_STAGES[from_index + 2]
-            _approved_record(db, project, "feature", feature, to_stage, actor, f"Signed off together with milestone “{milestone.name}”")
+def sync_milestones(db: Session, project: Project, milestone_ids, actor: User | None) -> None:
+    sync_containers(db, project, "milestone", milestone_ids, actor)
+
+
+def sync_modules(db: Session, project: Project, module_ids, actor: User | None) -> None:
+    sync_containers(db, project, "module", module_ids, actor)
+
+
+def sync_for_features(db: Session, project: Project, features, actor: User | None) -> None:
+    """After features moved together, their modules and milestones catch up (or step back)."""
+    db.flush()
+    sync_modules(db, project, [f.module_id for f in features], actor)
+    sync_milestones(db, project, [f.milestone_id for f in features], actor)
+
+
+def _carry_features_forward(db: Session, project: Project, container: str, obj, from_index: int, actor: User) -> list:
+    """Signing off a module or milestone also signs off the features that were at that stage."""
+    carried = []
+    for feature in linked_features(obj):
+        if feature_level(feature, container) == from_index:
+            to_stage = FEATURE_STAGES[FEATURE_STAGES.index(feature.stage) + 1]
+            _approved_record(db, project, "feature", feature, to_stage, actor, f"Signed off together with {label(container, obj)}")
             set_stage(db, project, "feature", feature, to_stage, actor, sync=False)
+            carried.append(feature)
+    if carried:
+        sync_for_features(db, project, carried, actor)
+    return carried
 
 
-def _carry_features_back(db: Session, project: Project, milestone, actor: User | None) -> None:
-    index = MILESTONE_STAGES.index(milestone.stage)
-    for feature in linked_features(milestone):
-        if feature_level(feature) > index:
-            set_stage(db, project, "feature", feature, FEATURE_STAGES[index + 1], actor, sync=False)
+def _carry_features_back(db: Session, project: Project, container: str, obj, actor: User | None) -> None:
+    index = STAGES[container].index(obj.stage)
+    stage = FEATURE_STAGES[index + 1] if container == "milestone" else FEATURE_STAGES[index]
+    moved = []
+    for feature in linked_features(obj):
+        if feature_level(feature, container) > index:
+            set_stage(db, project, "feature", feature, stage, actor, sync=False)
+            moved.append(feature)
+    if moved:
+        sync_for_features(db, project, moved, actor)
 
 
 def set_stage(db: Session, project: Project, target_type: str, obj, stage: str, actor: User | None, sync: bool = True) -> None:
@@ -355,12 +399,11 @@ def set_stage(db: Session, project: Project, target_type: str, obj, stage: str, 
         stale.status = "cancelled"
         stale.decided_at = utcnow()
     _log(db, project.id, actor, f"moved {label(target_type, obj)} from {old} to {stage}")
-    owner_id = obj.owner_id if target_type == "feature" else None
+    owner_id = getattr(obj, "owner_id", None) if target_type != "milestone" else None
     _notify(db, [owner_id], actor, f"moved {label(target_type, obj)} to {stage}", project.id,
             obj.id if target_type == "feature" else None)
-    if sync and target_type == "feature" and obj.milestone_id:
-        db.flush()
-        sync_milestones(db, project, [obj.milestone_id], actor)
+    if sync and target_type == "feature" and (obj.milestone_id or obj.module_id):
+        sync_for_features(db, project, [obj], actor)
 
 
 def may_decide(db: Session, project: Project, approval: Approval, user: User) -> bool:
@@ -393,8 +436,8 @@ def request(db: Session, project: Project, user: User | None, target_type: str, 
     if pending_for(db, target_type, obj.id):
         raise HTTPException(409, "A sign-off for this stage is already waiting for a decision")
     require_checklist(db, target_type, obj)
-    if target_type == "milestone" and gated(db, project):
-        require_features_ready(obj)
+    if target_type in CONTAINERS and gated(db, project):
+        require_features_ready(obj, target_type)
     approval = Approval(
         project_id=project.id, kind="stage", target_type=target_type, target_id=obj.id,
         stage=obj.stage, to_stage=to_stage, note=note,
@@ -414,8 +457,7 @@ def request(db: Session, project: Project, user: User | None, target_type: str, 
 
 
 def target_of(db: Session, approval: Approval):
-    model = Feature if approval.target_type == "feature" else Milestone
-    obj = db.get(model, approval.target_id or 0)
+    obj = db.get(_model(approval.target_type or "feature"), approval.target_id or 0)
     return obj if obj is not None and obj.project_id == approval.project_id else None
 
 
@@ -440,9 +482,10 @@ def decide(db: Session, project: Project, approval: Approval, user: User, decisi
     carried = []
     if decision == "approved":
         require_checklist(db, approval.target_type, obj)
-        if approval.target_type == "milestone" and gated(db, project):
-            require_features_ready(obj)
-            carried = milestone_gate(obj)["at_stage"] if milestone_gate(obj) else []
+        if approval.target_type in CONTAINERS and gated(db, project):
+            require_features_ready(obj, approval.target_type)
+            gate = container_gate(approval.target_type, obj)
+            carried = gate["at_stage"] if gate else []
             for feature in carried:  # they are signed off in the same step, so their checklists count too
                 try:
                     require_checklist(db, "feature", feature)
@@ -459,7 +502,7 @@ def decide(db: Session, project: Project, approval: Approval, user: User, decisi
         from_index = STAGES[approval.target_type].index(approval.stage)
         set_stage(db, project, approval.target_type, obj, approval.to_stage, user)
         if carried:
-            _carry_features_forward(db, project, obj, from_index, user)
+            _carry_features_forward(db, project, approval.target_type, obj, from_index, user)
         _notify(db, [approval.requester_id], user, f"signed off the {approval.stage} stage of {target}; it is now in {approval.to_stage}", project.id)
     else:
         reason = f": {note}" if note else ""
@@ -501,8 +544,8 @@ def change_stage(db: Session, project: Project, user: User, target_type: str, ob
         if not approver:
             raise HTTPException(403, "Only the project owner or a manager can move this back to an earlier stage")
         set_stage(db, project, target_type, obj, new_stage, user)
-        if target_type == "milestone":
-            _carry_features_back(db, project, obj, user)
+        if target_type in CONTAINERS:
+            _carry_features_back(db, project, target_type, obj, user)
         return
     if step > 1:
         raise HTTPException(409, f"Stages are signed off one at a time. The next stage is {next_stage(target_type, obj.stage)}.")
@@ -518,4 +561,4 @@ def initial_stage_allowed(db: Session, project: Project, user: User, target_type
     """New items start at the beginning unless an owner or manager places them further along."""
     if not gated(db, project) or is_approver(db, project, user):
         return True
-    return STAGES[target_type].index(stage) <= (1 if target_type == "feature" else 0)
+    return STAGES[target_type].index(stage) <= (0 if target_type == "milestone" else 1)

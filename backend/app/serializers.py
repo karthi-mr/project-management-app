@@ -113,11 +113,40 @@ def milestone_out(m: Milestone) -> dict:
         "due_date": m.due_date.isoformat() if m.due_date else None,
         "status": m.status,
         "stage": m.stage,
-        "features": [{"id": f.id, "title": f.title, "stage": f.stage} for f in sorted(m.features, key=lambda f: f.id)],
+        "features": [{"id": f.id, "title": f.title, "stage": f.stage, "module_id": f.module_id}
+                     for f in sorted(m.features, key=lambda f: f.id) if f.deleted_at is None],
+        "modules": [{"id": mod.id, "name": mod.name, "stage": mod.stage} for mod in sorted(m.modules, key=lambda x: x.id)],
         **_lifecycle("milestone", m),
         "issue_count": total,
         "done_count": done,
         "progress": round(done * 100 / total) if total else 0,
+    }
+
+
+def module_out(m) -> dict:
+    features = [f for f in m.features if f.deleted_at is None]
+    from . import signoff
+
+    current = signoff.FEATURE_STAGES.index(m.stage) if m.stage in signoff.FEATURE_STAGES else 0
+    return {
+        "id": m.id,
+        "project_id": m.project_id,
+        "name": m.name,
+        "description": m.description,
+        "stage": m.stage,
+        **_lifecycle("module", m),
+        "owner": user_brief(m.owner),
+        "milestone_id": m.milestone_id,
+        "milestone_name": m.milestone.name if m.milestone else None,
+        "start_date": m.start_date.isoformat() if m.start_date else None,
+        "target_date": m.target_date.isoformat() if m.target_date else None,
+        "features": [{"id": f.id, "title": f.title, "stage": f.stage, "owner": user_brief(f.owner)}
+                     for f in sorted(features, key=lambda f: f.id)],
+        "feature_count": len(features),
+        # Features already signed off past the module's current stage.
+        "signed_off_count": sum(1 for f in features if (signoff.FEATURE_STAGES.index(f.stage) if f.stage in signoff.FEATURE_STAGES else 0) > current),
+        "released_count": sum(1 for f in features if f.stage == "released"),
+        "created_at": dt(m.created_at),
     }
 
 
@@ -224,6 +253,8 @@ def feature_out(f: Feature) -> dict:
         "release_version": f.release.version if f.release else None,
         "milestone_id": f.milestone_id,
         "milestone_name": f.milestone.name if f.milestone else None,
+        "module_id": f.module_id,
+        "module_name": f.module.name if f.module else None,
         "start_date": f.start_date.isoformat() if f.start_date else None,
         "target_date": f.target_date.isoformat() if f.target_date else None,
         "issue_count": total,

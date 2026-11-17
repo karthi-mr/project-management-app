@@ -58,7 +58,7 @@ export default function WorkspaceSettings() {
       </div>
       <div className="card card-pad stack" style={{ maxWidth: 820 }}>
         <div className="row between row-wrap">
-          <h2 className="icon-label"><LayoutGrid size={17} /> <span>Modules</span></h2>
+          <h2 className="icon-label"><LayoutGrid size={17} /> <span>Optional tools</span></h2>
           <span className="small muted">{on} of {modules.length} switched on</span>
         </div>
         <p className="muted small">
