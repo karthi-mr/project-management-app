@@ -1,0 +1,41 @@
+name: trackly
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: trackly
+      POSTGRES_USER: trackly
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the .env file (see .env.example)}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trackly -d trackly"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    # The database is only reachable from the app container; no port is published.
+
+  app:
+    build: .
+    image: trackly-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://trackly:${POSTGRES_PASSWORD}@db:5432/trackly
+      PM_ADMIN_USERNAME: ${PM_ADMIN_USERNAME:-admin}
+      PM_ADMIN_PASSWORD: ${PM_ADMIN_PASSWORD:-Admin@123}
+      PM_ADMIN_EMAIL: ${PM_ADMIN_EMAIL:-admin@example.com}
+      PM_SECRET_KEY: ${PM_SECRET_KEY:-}
+      PM_TOKEN_TTL_HOURS: ${PM_TOKEN_TTL_HOURS:-12}
+    ports:
+      - "${PORT:-8000}:8000"
+    volumes:
+      - app_data:/data
+
+volumes:
+  db_data:
+  app_data:
