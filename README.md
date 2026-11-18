@@ -318,15 +318,16 @@ start-up, so existing data is kept.
 For hot reload, run the API and the Vite dev server separately:
 
 ```bash
-cd backend && .venv/bin/uvicorn app.main:app --reload --port 8000
+cd backend && .venv/bin/uvicorn app.main:app --reload --port 8001
 ```
 
 ```bash
 cd frontend && npm run dev
 ```
 
-Then open <http://localhost:5173>. Set `DATABASE_URL` to point the backend at PostgreSQL instead.
-API documentation is at <http://localhost:8000/docs>.
+Then open <http://localhost:5173>. Port 8001 keeps development away from the live app on 8000.
+API documentation is at <http://localhost:8001/docs>. **For the full step-by-step way to change the
+app and make it live, see [MAKING-CHANGES.md](MAKING-CHANGES.md).**
 
 ## Selling Trackly as a service (workspaces and licenses)
 
