@@ -602,6 +602,7 @@ def notifications(user: User = Depends(get_current_user), db: Session = Depends(
                 "project_id": n.project_id,
                 "issue_id": n.issue_id,
                 "feature_id": n.feature_id,
+                "conversation_id": n.conversation_id,
                 "is_read": n.is_read,
                 "created_at": dt(n.created_at),
             }

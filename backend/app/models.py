@@ -377,6 +377,10 @@ class Notification(Base):
     feature_id: Mapped[int | None] = mapped_column(
         ForeignKey("features.id", ondelete="CASCADE"), nullable=True
     )
+    # A chat @mention: opens that conversation.
+    conversation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True
+    )
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
 
@@ -520,6 +524,9 @@ class ChatMessage(Base):
     reply_to_id: Mapped[int | None] = mapped_column(
         ForeignKey("chat_messages.id", ondelete="SET NULL"), nullable=True
     )
+    # Who was @mentioned (user ids, comma separated), and whether it was @all in a group.
+    mentions: Mapped[str] = mapped_column(Text, default="")
+    mentions_all: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     sender: Mapped[User | None] = relationship()

@@ -177,6 +177,15 @@ export default function Assistant() {
     }
   }, [open, messages.length])
   useEffect(() => {
+    // Other parts of the app (chat “/ask”, “/task”) can hand the assistant a question.
+    const onAsk = (e) => {
+      setOpen(true)
+      askRef.current?.(e.detail?.text || '')
+    }
+    window.addEventListener('pm:assistant-ask', onAsk)
+    return () => window.removeEventListener('pm:assistant-ask', onAsk)
+  }, [])
+  useEffect(() => {
     // Ctrl/⌘ + J opens and closes the assistant.
     const onKey = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j') {
@@ -203,6 +212,9 @@ export default function Assistant() {
     setBusy(false)
   }
 
+  const askRef = useRef(null)
+  askRef.current = ask
+
   const finishAction = (index) => (result, keepOpen = false) => {
     setMessages((m) => {
       const next = m.map((msg, n) => (n === index && !keepOpen ? { ...msg, actionState: 'done' } : msg))
@@ -223,7 +235,7 @@ export default function Assistant() {
   return (
     <>
       {!open && (
-        <button type="button" className="assistant-fab" onClick={() => setOpen(true)} aria-label="Open the assistant" title="Assistant (Ctrl+J)">
+        <button type="button" className={`assistant-fab ${location.pathname.startsWith('/chat') ? 'raised' : ''}`} onClick={() => setOpen(true)} aria-label="Open the assistant" title="Assistant (Ctrl+J)">
           <Bot size={22} />
         </button>
       )}

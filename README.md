@@ -612,3 +612,15 @@ leaves Trackly and it costs nothing to run. Type **help** to see everything it u
 - **What it can see:** exactly what the person asking could open themselves - their projects and the
   sections they may view; costs only for project owners and administrators.
 - Admins can switch it off for everyone under Workspace settings → Optional tools.
+
+## Chat: mentions and shortcuts
+
+- **@mentions.** Type **@** in a message to pick someone from the conversation (arrow keys, then
+  Enter or Tab). The person gets a notification that opens the chat, the message is highlighted for
+  them, and the conversation shows an **@** badge until they read it. In a group, **@all** (or
+  @everyone) notifies every member. Only members of the conversation can be mentioned.
+- **/ shortcuts.** Type **/** at the start of a message:
+  `/issue APP-12` shares an issue as a link (any issue key in a message is clickable),
+  `/task <title>` and `/bug <title>` draft an issue with the assistant,
+  `/ask <question>` asks the assistant, `/me <action>` posts "Dana is reviewing designs",
+  `/shrug` adds ¯\_(ツ)_/¯, and `/help` lists them.

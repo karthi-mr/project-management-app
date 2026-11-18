@@ -256,6 +256,21 @@ def schedule_items(projects: list[Project], start: date, end: date, allowed=None
     return items
 
 
+@router.get("/issues/key/{key}")
+def issue_by_key(key: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Find an issue by its key (APP-12), for links typed in chat."""
+    import re as _re
+
+    m = _re.fullmatch(r"([A-Za-z][A-Za-z0-9]{1,9})-(\d{1,9})", key.strip())
+    if not m:
+        raise HTTPException(404, "Issue not found")
+    project = db.scalar(select(Project).where(func.upper(Project.key) == m.group(1).upper()))
+    issue = db.scalar(select(Issue).where(Issue.project_id == project.id, Issue.number == int(m.group(2)))) if project else None
+    if issue is None:
+        raise HTTPException(404, "Issue not found")
+    return issue_out(_get_issue(db, issue.id, user))
+
+
 def _get_issue(db: Session, issue_id: int, user: User) -> Issue:
     issue = db.get(Issue, issue_id)
     if not issue:

@@ -1214,3 +1214,24 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 5px; border-radius: 5
 .assistant-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .assistant-input { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--border); }
 @media (max-width: 640px) { .assistant { right: 8px; bottom: 8px; width: calc(100vw - 16px); height: calc(100vh - 16px); } .assistant-fab { right: 14px; bottom: 14px; } }
+
+/* ───────────── Chat: mentions and shortcuts ───────────── */
+.compose-popup { position: absolute; left: 12px; right: 12px; bottom: calc(100% - 2px); z-index: 20; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-lg); padding: 6px; max-height: 320px; overflow-y: auto; }
+.compose-popup-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); padding: 4px 8px 6px; }
+.compose-popup-foot { font-size: 11px; padding: 6px 8px 2px; }
+.compose-option { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.compose-option.active, .compose-option:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.compose-option .grow { display: flex; flex-direction: column; min-width: 0; }
+.compose-option-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.compose-option-icon { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); color: var(--accent); flex: none; }
+.mention { display: inline-flex; align-items: center; gap: 1px; padding: 0 5px; border-radius: 6px; font-weight: 600; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.mention.me { background: color-mix(in srgb, #f59e0b 22%, transparent); color: inherit; }
+.msg.mine .mention { background: rgba(255,255,255,.22); color: inherit; }
+.bubble.mentions-me { box-shadow: inset 3px 0 0 #f59e0b; }
+.issue-link { border: 0; padding: 0 4px; border-radius: 5px; font: inherit; font-weight: 650; font-family: var(--mono, ui-monospace, monospace); font-size: .92em; cursor: pointer; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+.msg.mine .issue-link { background: rgba(255,255,255,.22); color: inherit; }
+.msg-action { opacity: .9; }
+.chat-badge.mention-badge { background: #f59e0b; }
+.compose-popup { max-width: 460px; }
+/* On the chat page the message box and Send button sit at the bottom right. */
+.assistant-fab.raised { bottom: 96px; }

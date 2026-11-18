@@ -70,7 +70,10 @@ ADDED_COLUMNS = {
         "name": "VARCHAR(80)",
         "created_by_id": "INTEGER REFERENCES users(id) ON DELETE SET NULL",
     },
+    "notifications": {"conversation_id": "INTEGER REFERENCES conversations(id) ON DELETE CASCADE"},
     "chat_messages": {
+        "mentions": "TEXT NOT NULL DEFAULT ''",
+        "mentions_all": "BOOLEAN NOT NULL DEFAULT FALSE",
         "image_url": "VARCHAR(200)",
         "reply_to_id": "INTEGER REFERENCES chat_messages(id) ON DELETE SET NULL",
     },

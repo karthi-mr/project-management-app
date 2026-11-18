@@ -58,7 +58,8 @@ export default function NotificationBell() {
     if (!note.is_read) {
       api(`/notifications/${note.id}/read`, { method: 'POST' }).then(load).catch(() => {})
     }
-    if (note.issue_id) openIssue(note.issue_id)
+    if (note.conversation_id) navigate(`/chat?c=${note.conversation_id}`)
+    else if (note.issue_id) openIssue(note.issue_id)
     else if (note.feature_id && note.project_id) navigate(`/projects/${note.project_id}?tab=features&feature=${note.feature_id}`)
     else if (note.project_id) navigate(`/projects/${note.project_id}`)
   }

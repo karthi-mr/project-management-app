@@ -1,4 +1,6 @@
 """Chat: one-to-one and group conversations with replies, reactions, images and read receipts."""
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
@@ -6,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import ChatMessage, ChatReaction, Conversation, ConversationMember, ConversationRead, User, utcnow
+from ..models import ChatMessage, ChatReaction, Conversation, ConversationMember, ConversationRead, Notification, User, utcnow
 from ..realtime import hub
 from ..security import get_current_user
 from ..serializers import dt, user_brief
@@ -64,6 +66,8 @@ def message_out(m: ChatMessage, viewer_id: int) -> dict:
         "body": m.body,
         "image_url": m.image_url,
         "reply_to": _snippet(m.reply_to) if m.reply_to_id else None,
+        "mentions": [int(x) for x in (m.mentions or "").split(",") if x],
+        "mentions_all": bool(m.mentions_all),
         "reactions": [
             {"emoji": emoji, "count": len(users), "mine": viewer_id in users}
             for emoji, users in sorted(
@@ -151,6 +155,18 @@ def _unread(db: Session, user: User, conversation_id: int) -> int:
     )
 
 
+def _unread_mentions(db: Session, user: User, conversation_id: int) -> int:
+    """Unread messages that @mention this person (or @all)."""
+    rows = db.execute(
+        select(ChatMessage.mentions, ChatMessage.mentions_all).where(
+            ChatMessage.conversation_id == conversation_id, ChatMessage.id > _last_read(db, conversation_id, user.id),
+            ChatMessage.sender_id != user.id, or_(ChatMessage.mentions_all.is_(True), ChatMessage.mentions != ""),
+        )
+    ).all()
+    mine = str(user.id)
+    return sum(1 for mentions, everyone in rows if everyone or mine in (mentions or "").split(","))
+
+
 def conversation_out(db: Session, conv: Conversation, user: User) -> dict:
     last = db.scalar(
         select(ChatMessage)
@@ -185,12 +201,16 @@ def conversation_out(db: Session, conv: Conversation, user: User) -> dict:
         "id": conv.id,
         **identity,
         "unread": _unread(db, user, conv.id),
+        "mentions": _unread_mentions(db, user, conv.id),
         "last_message": (
             {
-                "body": last.body[:120] or ("📷 Photo" if last.image_url else ""),
+                # “/me is reviewing” reads as “Sam is reviewing”.
+                "body": (f"{last.sender.full_name.split(' ')[0] if last.sender else 'Someone'} {last.body[4:]}"
+                         if last.body.startswith("/me ") else last.body)[:120] or ("📷 Photo" if last.image_url else ""),
                 "sender_name": "You"
                 if last.sender_id == user.id
                 else (last.sender.full_name.split(" ")[0] if last.sender else "Someone"),
+                "action": last.body.startswith("/me "),  # already names the sender
                 "created_at": dt(last.created_at),
             }
             if last
@@ -319,12 +339,39 @@ def send_message(
     conv.last_message_at = utcnow()
     db.flush()
     _read_marker(db, conv.id, user.id).last_read_id = message.id
+    _notify_mentions(db, conv, message, user)
     db.commit()
     db.refresh(message)
     # Deliver instantly to everyone's open tabs (the sender may have several).
     for participant in _participants(conv, db):
         hub.push([participant], {"type": "chat.message", "message": message_out(message, participant)})
     return message_out(message, user.id)
+
+
+# “@dana” mentions a member by username; in a group, “@all” (or @everyone) mentions every member.
+MENTION = re.compile(r"(?<![\w@.])@([A-Za-z0-9._-]{2,50})")
+EVERYONE = {"all", "everyone", "here"}
+
+
+def _notify_mentions(db: Session, conv: Conversation, message: ChatMessage, sender: User) -> None:
+    names = {m.group(1).lower().rstrip("._-") for m in MENTION.finditer(message.body or "")}
+    if not names:
+        return
+    ids = _participants(conv, db)
+    members = {u.username.lower(): u for u in db.scalars(select(User).where(User.id.in_(ids or [0]), User.is_active)).all()}
+    everyone = conv.kind == "group" and bool(names & EVERYONE)
+    named = {members[n].id for n in names if n in members and members[n].id != sender.id}
+    message.mentions = ",".join(str(i) for i in sorted(named))
+    message.mentions_all = everyone
+    recipients = {u.id for u in members.values() if u.id != sender.id} if everyone else named
+    where = f"in {conv.name}" if conv.kind == "group" and conv.name else "in a message"
+    snippet = (message.body or "").strip().replace("\n", " ")
+    snippet = snippet if len(snippet) <= 120 else snippet[:117] + "…"
+    for uid in recipients:
+        who = "you" if uid in named or not everyone else "everyone"
+        db.add(Notification(user_id=uid, conversation_id=conv.id,
+                            message=f"{sender.full_name} mentioned {who} {where}: “{snippet}”"[:500]))
+        db.info.setdefault("notify_users", set()).add(uid)
 
 
 def _get_message(db: Session, message_id: int, user: User) -> tuple[ChatMessage, Conversation]:

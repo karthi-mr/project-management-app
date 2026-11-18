@@ -4,7 +4,8 @@ import { ArrowLeft, CheckCheck, ImagePlus, LogOut, MessagesSquare, Pencil, Reply
 import { api, uploadImage } from '../api'
 import { useAuth, useToast } from '../context'
 import { isRealtimeConnected, onRealtime, onlineUsers, sendRealtime } from '../realtime'
-import { Avatar, AvatarStack, Field, Modal, Spinner, timeAgo } from '../ui'
+import { Avatar, AvatarStack, Field, Modal, Spinner, timeAgo, useOpenIssue } from '../ui'
+import { ComposePopup, MessageText, commandOptions, mentionOptions, popupFor, runCommand } from '../components/ChatExtras'
 import { useConfirm } from '../context'
 import { useFeature } from '../components/License'
 import { localeTag, withZone } from '../i18n'
@@ -184,6 +185,12 @@ function Thread({ conv, online, people, onBack, onActivity, onGroupChanged }) {
   const isGroup = conv.kind === 'group'
   const nameOf = (id) => (conv.members || []).find((m) => m.id === id)?.full_name?.split(' ')[0] || conv.title.split(' ')[0]
   const [draft, setDraft] = useState('')
+  // “@” suggestions and “/” shortcuts above the message box.
+  const [popup, setPopup] = useState(null)
+  const [popupIndex, setPopupIndex] = useState(0)
+  const popupOptions = popup ? (popup.kind === 'mention' ? mentionOptions(conv, user, popup.query) : commandOptions(popup.query)) : []
+  const openIssue = useOpenIssue()
+  const openIssueKey = (key) => api(`/issues/key/${key}`).then((i) => openIssue(i.id)).catch(() => toast(`You cannot open ${key}`, 'error'))
   const [replyTo, setReplyTo] = useState(null)
   const [sending, setSending] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -324,13 +331,57 @@ function Thread({ conv, online, people, onBack, onActivity, onGroupChanged }) {
     }
   }
 
+  const clearDraft = () => {
+    setDraft('')
+    setPopup(null)
+    if (inputRef.current) inputRef.current.style.height = 'auto'
+  }
+
   const send = async () => {
-    const body = draft.trim()
+    let body = draft.trim()
     if (!body || sending) return
-    if (await post({ body })) {
-      setDraft('')
-      if (inputRef.current) inputRef.current.style.height = 'auto'
+    if (body.startsWith('/')) {
+      const result = await runCommand(body, { toast })
+      if (result.error) return toast(result.error, 'error')
+      if (result.help) {
+        setDraft('/')
+        setPopup({ kind: 'slash', query: '', start: 0 })
+        setPopupIndex(0)
+        return
+      }
+      if (result.done) return clearDraft()
+      body = result.body
     }
+    if (await post({ body })) clearDraft()
+  }
+
+  const refreshPopup = (value, caret) => {
+    const next = popupFor(value, caret)
+    setPopup(next)
+    if (!next || next.kind !== popup?.kind || next.query !== popup?.query) setPopupIndex(0)
+  }
+
+  const pick = (option) => {
+    const el = inputRef.current
+    const caret = el?.selectionStart ?? draft.length
+    let value
+    let at
+    if (popup.kind === 'mention') {
+      const insert = `@${option.key} `
+      value = draft.slice(0, popup.start) + insert + draft.slice(caret)
+      at = popup.start + insert.length
+    } else {
+      const insert = `/${option.name} `
+      value = insert + draft.replace(/^\/\S*\s?/, '')
+      at = insert.length
+      if (option.name === 'help') value = '/'
+    }
+    setDraft(value)
+    setPopup(option.name === 'help' ? { kind: 'slash', query: '', start: 0 } : null)
+    requestAnimationFrame(() => {
+      el?.focus()
+      el?.setSelectionRange(value === '/' ? 1 : at, value === '/' ? 1 : at)
+    })
   }
 
   const sendImages = async (files) => {
@@ -370,6 +421,7 @@ function Thread({ conv, online, people, onBack, onActivity, onGroupChanged }) {
 
   const onDraft = (e) => {
     setDraft(e.target.value)
+    refreshPopup(e.target.value, e.target.selectionStart)
     e.target.style.height = 'auto'
     e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`
     if (e.target.value && Date.now() - lastTypingSent.current > 2000) {
@@ -445,14 +497,20 @@ function Thread({ conv, online, people, onBack, onActivity, onGroupChanged }) {
                     {!mine && <span className="avatar-slot">{lastOfRun && <Avatar user={m.sender} size={28} />}</span>}
                     <div className="msg-col">
                       {isGroup && !mine && !sameAsPrevious && <span className="msg-name">{m.sender?.full_name}</span>}
-                      <div className={`bubble ${m.image_url ? 'has-image' : ''}`} title={new Date(m.created_at).toLocaleString(localeTag(), withZone())}>
+                      <div className={`bubble ${m.image_url ? 'has-image' : ''} ${!mine && (m.mentions?.includes(user.id) || (isGroup && m.mentions_all)) ? 'mentions-me' : ''}`} title={new Date(m.created_at).toLocaleString(localeTag(), withZone())}>
                         {m.reply_to && (
                           <span className="quote" style={m.image_url ? { margin: '2px 2px 6px' } : undefined}>
                             <b>{m.reply_to.sender_name}</b>{m.reply_to.body}
                           </span>
                         )}
                         {m.image_url && <img className="shared" src={m.image_url} alt="Shared" loading="lazy" onClick={() => setLightbox(m.image_url)} />}
-                        {m.body && (m.image_url ? <span className="bubble-text">{m.body}</span> : m.body)}
+                        {m.body && (() => {
+                          // “/me is reviewing designs” reads as “Dana is reviewing designs”.
+                          const content = m.body.startsWith('/me ')
+                            ? <i className="msg-action">{m.sender?.full_name?.split(' ')[0] || 'Someone'} <MessageText text={m.body.slice(4)} conv={conv} me={user} onIssue={openIssueKey} /></i>
+                            : <MessageText text={m.body} conv={conv} me={user} onIssue={openIssueKey} />
+                          return m.image_url ? <span className="bubble-text">{content}</span> : content
+                        })()}
                       </div>
                       {m.reactions.length > 0 && (
                         <div className="reactions">
@@ -509,6 +567,7 @@ function Thread({ conv, online, people, onBack, onActivity, onGroupChanged }) {
             <button className="btn btn-icon btn-ghost" onClick={() => setEmojiOpen((v) => !v)} aria-label="Insert emoji" title="Emoji" aria-expanded={emojiOpen}><Smile size={18} /></button>
             <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden onChange={(e) => { sendImages(e.target.files); e.target.value = '' }} />
           </div>
+          <ComposePopup popup={popup} options={popupOptions} index={Math.min(popupIndex, Math.max(0, popupOptions.length - 1))} onPick={pick} />
           {emojiOpen && (
             <div className="emoji-pop" style={{ left: 20, bottom: 'calc(100% - 4px)', flexWrap: 'wrap', width: 300, borderRadius: 16 }}>
               {EMOJI.map((emoji) => <button key={emoji} onClick={() => addEmoji(emoji)} aria-label={`Insert ${emoji}`}>{emoji}</button>)}
@@ -519,9 +578,33 @@ function Thread({ conv, online, people, onBack, onActivity, onGroupChanged }) {
             rows={1}
             value={draft}
             maxLength={4000}
-            placeholder={`Message ${isGroup ? conv.title : firstName}`}
+            placeholder={`Message ${isGroup ? conv.title : firstName} · @ to mention, / for shortcuts`}
             onChange={onDraft}
+            onKeyUp={(e) => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) refreshPopup(draft, e.target.selectionStart) }}
+            onClick={(e) => refreshPopup(draft, e.target.selectionStart)}
+            onBlur={() => setTimeout(() => setPopup(null), 150)}
             onKeyDown={(e) => {
+              if (popup && popupOptions.length > 0) {
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  const step = e.key === 'ArrowDown' ? 1 : -1
+                  setPopupIndex((i) => (i + step + popupOptions.length) % popupOptions.length)
+                  return
+                }
+                if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
+                  // A complete shortcut with its text typed is sent as it is.
+                  if (!(popup.kind === 'slash' && e.key === 'Enter' && /^\/\w+\s+\S/.test(draft))) {
+                    e.preventDefault()
+                    pick(popupOptions[Math.min(popupIndex, popupOptions.length - 1)])
+                    return
+                  }
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault()
+                  setPopup(null)
+                  return
+                }
+              }
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault()
                 send()
@@ -665,8 +748,9 @@ export default function Chat() {
                     </div>
                     <div className="row between" style={{ gap: 8 }}>
                       <span className="preview truncate">
-                        {c.last_message ? `${c.last_message.sender_name === 'You' ? 'You: ' : c.kind === 'group' && c.last_message.sender_name !== 'Someone' ? `${c.last_message.sender_name}: ` : ''}${c.last_message.body}` : 'No messages yet'}
+                        {c.last_message ? `${c.last_message.action ? '' : c.last_message.sender_name === 'You' ? 'You: ' : c.kind === 'group' && c.last_message.sender_name !== 'Someone' ? `${c.last_message.sender_name}: ` : ''}${c.last_message.body}` : 'No messages yet'}
                       </span>
+                      {c.mentions > 0 && c.id !== activeId && <span className="chat-badge mention-badge" title={`${c.mentions} unread ${c.mentions === 1 ? 'mention' : 'mentions'}`}>@</span>}
                       {c.unread > 0 && c.id !== activeId && <span className="chat-badge">{c.unread > 99 ? '99+' : c.unread}</span>}
                     </div>
                   </span>
