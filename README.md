@@ -595,3 +595,20 @@ The workspace switches that hide parts of the app (Workspace settings) are now c
 Time can be logged on a feature itself (design, analysis, reviews) as well as on its issues. A feature
 shows its total hours and, for the project owner and administrators, its cost; the project budget
 breaks the cost down by feature; timesheets and workload include this time.
+
+## Assistant
+
+A free chat helper (the round button at the bottom right, or **Ctrl+J**). It uses no AI service:
+it understands a fixed set of everyday phrases and answers from the workspace's own data, so nothing
+leaves Trackly and it costs nothing to run. Type **help** to see everything it understands.
+
+- **Questions:** "What is waiting for me?", "My work", "Overdue in Mobile App", "Dana's overdue",
+  "Due this week", "Blocked", "Status of Payments", "Why is Beta release stuck", "APP-12",
+  "Summary of Mobile App", "Budget of Store Redesign", "Who is overloaded", "Find checkout".
+- **Actions, drafted for you to confirm:** "Create bug Login fails for Dana in Mobile App due Friday
+  high priority", "Log 2h on APP-12 yesterday - fixing the form", "Log 30m on Checkout - design review",
+  "Request sign-off for Payments". Nothing changes until you press the button on the draft, and
+  confirming uses the normal app actions, so every permission and sign-off rule still applies.
+- **What it can see:** exactly what the person asking could open themselves - their projects and the
+  sections they may view; costs only for project owners and administrators.
+- Admins can switch it off for everyone under Workspace settings → Optional tools.

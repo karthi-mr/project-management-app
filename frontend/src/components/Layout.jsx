@@ -33,6 +33,7 @@ import ThemeToggle from './ThemeToggle'
 import IssueModal from './IssueModal'
 import NotificationBell from './NotificationBell'
 import CommandPalette from './CommandPalette'
+import Assistant from './Assistant'
 import { onRealtime } from '../realtime'
 import { LicenseBanner } from './License'
 import { setLocale, useT } from '../i18n'
@@ -361,6 +362,7 @@ export default function Layout() {
       </div>
 
       <CommandPalette open={paletteOpen} setOpen={setPaletteOpen} onToggleSidebar={toggleSidebar} />
+      {mod.assistant !== false && <Assistant />}
       {issueId && <IssueModal key={issueId} issueId={issueId} onClose={closeIssue} />}
     </div>
   )

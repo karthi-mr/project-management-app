@@ -18,6 +18,7 @@ const HINTS = {
   chat: 'Direct and group messages.',
   automation: 'Rules that act on issues automatically.',
   client_access: 'Read-only links and feedback from clients.',
+  assistant: 'A chat helper that answers questions about projects and drafts issues, time and sign-off requests. Free.',
 }
 
 /** Workspace administrators: choose which optional parts of the app people see. */

@@ -158,6 +158,7 @@ MODULES = {
     "chat": "Chat",
     "automation": "Automation rules",
     "client_access": "Client links and feedback",
+    "assistant": "Assistant",
 }
 # A new workspace starts focused on planning and delivery; the rest is one switch away.
 NEW_WORKSPACE_HIDDEN = ("tests", "risks", "time", "budgets", "portfolio", "workload", "automation")
